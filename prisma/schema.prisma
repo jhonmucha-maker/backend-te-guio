@@ -1,0 +1,741 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model tbl_roles {
+  id                      Int                  @id @default(autoincrement())
+  nombre                  String               @unique @db.VarChar(50)
+  descripcion             String?
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?            @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?            @db.Timestamptz(6)
+  estado                  Int                  @default(1)
+  tbl_roles_permisos      tbl_roles_permisos[]
+  tbl_usuarios            tbl_usuarios[]
+}
+
+model tbl_permisos {
+  id                      Int                  @id @default(autoincrement())
+  codigo                  String               @unique @db.VarChar(100)
+  nombre                  String               @db.VarChar(100)
+  descripcion             String?
+  tipo                    String               @db.VarChar(50)
+  recurso                 String?              @db.VarChar(150)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?            @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?            @db.Timestamptz(6)
+  estado                  Int                  @default(1)
+  tbl_roles_permisos      tbl_roles_permisos[]
+}
+
+model tbl_roles_permisos {
+  id                      Int          @id @default(autoincrement())
+  id_rol                  Int
+  id_permiso              Int
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?    @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?    @db.Timestamptz(6)
+  estado                  Int          @default(1)
+  tbl_permisos            tbl_permisos @relation(fields: [id_permiso], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tbl_roles               tbl_roles    @relation(fields: [id_rol], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id_rol, id_permiso], map: "uq_rol_permiso")
+}
+
+model tbl_usuarios {
+  id                             Int                              @id @default(autoincrement())
+  nombre                         String                           @db.VarChar(150)
+  correo                         String                           @unique @db.VarChar(150)
+  telefono                       String?                          @db.VarChar(20)
+  contrasena                     String                           @db.VarChar(255)
+  imagen_perfil                  String?                          @db.VarChar(500)
+  id_rol                         Int
+  id_ciudad                      Int?
+  correo_verificado              Boolean                          @default(false)
+  activo                         Boolean                          @default(true)
+  ultimo_login                   DateTime?                        @db.Timestamptz(6)
+  eliminado_en                   DateTime?                        @db.Timestamptz(6)
+  id_usuario_registro            Int?
+  fecha_hora_registro            DateTime?                        @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion        Int?
+  fecha_hora_modificacion        DateTime?                        @db.Timestamptz(6)
+  aceptaciones_terminos          tbl_aceptaciones_terminos[]
+  calificaciones_productos       tbl_calificaciones_productos[]
+  calificaciones_tiendas         tbl_calificaciones_tiendas[]
+  tbl_codigos_verificacion_email tbl_codigos_verificacion_email[]
+  dispositivos_push              tbl_dispositivos_push[]
+  estados_lectura_tickets        tbl_estados_lectura_tickets[]
+  favoritos_productos            tbl_favoritos_productos[]
+  favoritos_tiendas              tbl_favoritos_tiendas[]
+  historial_precios              tbl_historial_precios[]
+  listas_compras                 tbl_listas_compras[]
+  log_auditoria                  tbl_log_auditoria[]
+  log_envio_email                tbl_log_envio_email[]
+  mensajes_tickets               tbl_mensajes_tickets[]
+  participaciones_tickets        tbl_participantes_tickets[]
+  tbl_perfil_vendedor            tbl_perfiles_vendedor?
+  solicitudes_suscripcion        tbl_solicitudes_suscripcion[]
+  tickets_creados                tbl_tickets[]
+  tiendas                        tbl_tiendas[]
+  tbl_tokens_recuperacion        tbl_tokens_recuperacion[]
+  tbl_tokens_refresco            tbl_tokens_refresco[]
+  tbl_ciudades                   tbl_ciudades?                    @relation(fields: [id_ciudad], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuarios_ciudad")
+  tbl_roles                      tbl_roles                        @relation(fields: [id_rol], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuarios_roles")
+
+  @@index([correo])
+  @@index([id_rol, activo])
+  @@index([id_ciudad])
+}
+
+model tbl_tokens_refresco {
+  id                  Int          @id @default(autoincrement())
+  id_usuario          Int
+  token_hash          String       @db.VarChar(500)
+  expira_en           DateTime     @db.Timestamptz(6)
+  revocado_en         DateTime?    @db.Timestamptz(6)
+  user_agent          String?
+  ip                  String?      @db.VarChar(45)
+  fecha_hora_registro DateTime?    @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+
+  @@index([id_usuario])
+  @@index([expira_en])
+}
+
+model tbl_codigos_verificacion_email {
+  id                  Int          @id @default(autoincrement())
+  id_usuario          Int
+  codigo              String       @db.Char(6)
+  expira_en           DateTime     @db.Timestamptz(6)
+  intentos            Int          @default(0)
+  fecha_hora_registro DateTime?    @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+
+  @@index([id_usuario])
+}
+
+model tbl_tokens_recuperacion {
+  id                  Int          @id @default(autoincrement())
+  id_usuario          Int
+  token_hash          String       @db.VarChar(500)
+  expira_en           DateTime     @db.Timestamptz(6)
+  usado_en            DateTime?    @db.Timestamptz(6)
+  fecha_hora_registro DateTime?    @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+
+  @@index([id_usuario])
+}
+
+model tbl_ciudades {
+  id                      Int            @id @default(autoincrement())
+  nombre                  String         @db.VarChar(100)
+  activo                  Boolean        @default(true)
+  eliminado_en            DateTime?      @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?      @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?      @db.Timestamptz(6)
+  tbl_galerias            tbl_galerias[]
+  tbl_usuarios            tbl_usuarios[]
+  tbl_zonas               tbl_zonas[]
+}
+
+model tbl_zonas {
+  id                      Int            @id @default(autoincrement())
+  id_ciudad               Int
+  nombre                  String         @db.VarChar(100)
+  activo                  Boolean        @default(true)
+  eliminado_en            DateTime?      @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?      @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?      @db.Timestamptz(6)
+  tbl_galerias            tbl_galerias[]
+  tbl_ciudades            tbl_ciudades   @relation(fields: [id_ciudad], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_zonas_ciudad")
+
+  @@index([id_ciudad])
+}
+
+model tbl_galerias {
+  id                      Int                  @id @default(autoincrement())
+  id_ciudad               Int
+  id_zona                 Int
+  nombre                  String               @db.VarChar(150)
+  direccion               String?
+  descripcion             String?
+  latitud                 Decimal?             @db.Decimal(10, 7)
+  longitud                Decimal?             @db.Decimal(10, 7)
+  activo                  Boolean              @default(true)
+  eliminado_en            DateTime?            @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?            @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?            @db.Timestamptz(6)
+  fotos                   tbl_fotos_galerias[]
+  tbl_ciudades            tbl_ciudades         @relation(fields: [id_ciudad], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_galerias_ciudad")
+  tbl_zonas               tbl_zonas            @relation(fields: [id_zona], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_galerias_zona")
+  tiendas                 tbl_tiendas[]
+
+  @@index([id_ciudad, id_zona])
+}
+
+model tbl_fotos_galerias {
+  id           Int          @id @default(autoincrement())
+  id_galeria   Int
+  url          String
+  posicion     Int          @default(0)
+  tbl_galerias tbl_galerias @relation(fields: [id_galeria], references: [id], onDelete: Cascade)
+
+  @@index([id_galeria])
+}
+
+model tbl_categorias {
+  id                      Int             @id @default(autoincrement())
+  nombre                  String          @db.VarChar(100)
+  activo                  Boolean         @default(true)
+  eliminado_en            DateTime?       @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?       @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?       @db.Timestamptz(6)
+  descripcion             String?
+  productos               tbl_productos[]
+}
+
+model tbl_perfiles_vendedor {
+  id                      Int                       @id @default(autoincrement())
+  id_usuario              Int                       @unique
+  nombre_negocio          String?                   @db.VarChar(150)
+  ruc                     String?                   @db.VarChar(20)
+  dni                     String?                   @db.VarChar(15)
+  direccion               String?
+  estado_aprobacion       String                    @default("PENDIENTE") @db.VarChar(20)
+  motivo_rechazo          String?
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?                 @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?                 @db.Timestamptz(6)
+  razon_social            String?                   @db.VarChar(200)
+  tipo_comprobante        String                    @default("BOLETA") @db.VarChar(20)
+  documentos              tbl_documentos_vendedor[]
+  tbl_usuarios            tbl_usuarios              @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+}
+
+model tbl_documentos_vendedor {
+  id                    Int                   @id @default(autoincrement())
+  id_perfil_vendedor    Int
+  tipo                  String                @db.VarChar(20)
+  url_archivo           String
+  id_usuario_registro   Int?
+  fecha_hora_registro   DateTime?             @default(now()) @db.Timestamptz(6)
+  tbl_perfiles_vendedor tbl_perfiles_vendedor @relation(fields: [id_perfil_vendedor], references: [id], onDelete: Cascade)
+
+  @@index([id_perfil_vendedor])
+}
+
+model tbl_tiendas {
+  id                      Int                             @id @default(autoincrement())
+  id_vendedor             Int
+  id_galeria              Int
+  nombre                  String                          @db.VarChar(150)
+  descripcion             String?
+  direccion               String?
+  latitud                 Decimal?                        @db.Decimal(10, 7)
+  longitud                Decimal?                        @db.Decimal(10, 7)
+  horarios_json           Json?
+  redes_sociales_json     Json?
+  estado_aprobacion       String                          @default("PENDIENTE") @db.VarChar(20)
+  motivo_aprobacion       String?
+  activo                  Boolean                         @default(true)
+  desactivada_por_vendedor Boolean                        @default(false)
+  eliminado_en            DateTime?                       @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?                       @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?                       @db.Timestamptz(6)
+  telefono                String?                         @db.VarChar(20)
+  numero_local            String?                         @db.VarChar(50)
+  observacion             String?
+  agregado_calificacion   tbl_agregados_cal_tiendas?
+  calificaciones          tbl_calificaciones_tiendas[]
+  favoritos               tbl_favoritos_tiendas[]
+  fotos                   tbl_fotos_tiendas[]
+  productos               tbl_productos[]
+  solicitudes_suscripcion tbl_solicitudes_suscripcion[]
+  suscripcion_activa      tbl_suscripciones_activas?
+  tickets                 tbl_tickets[]
+  tbl_galerias            tbl_galerias                    @relation(fields: [id_galeria], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tiendas_galeria")
+  tbl_usuarios            tbl_usuarios                    @relation(fields: [id_vendedor], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tiendas_vendedor")
+  transacciones           tbl_transacciones_suscripcion[]
+
+  @@index([id_vendedor])
+  @@index([id_galeria])
+  @@index([estado_aprobacion, activo])
+}
+
+model tbl_fotos_tiendas {
+  id          Int         @id @default(autoincrement())
+  id_tienda   Int
+  url         String
+  posicion    Int         @default(0)
+  tbl_tiendas tbl_tiendas @relation(fields: [id_tienda], references: [id], onDelete: Cascade)
+
+  @@index([id_tienda])
+}
+
+model tbl_productos {
+  id                      Int                            @id @default(autoincrement())
+  id_tienda               Int
+  id_categoria            Int
+  nombre                  String                         @db.VarChar(200)
+  descripcion             String?
+  precio                  Decimal                        @db.Decimal(10, 2)
+  moneda                  String                         @default("PEN") @db.VarChar(5)
+  precio_visible          Boolean                        @default(true)
+  estado_aprobacion       String                         @default("PENDIENTE") @db.VarChar(20)
+  motivo_aprobacion       String?
+  estado                  String                         @default("ACTIVE") @db.VarChar(20)
+  eliminado_en            DateTime?                      @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?                      @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?                      @db.Timestamptz(6)
+  agregado_calificacion   tbl_agregados_cal_productos?
+  calificaciones          tbl_calificaciones_productos[]
+  favoritos               tbl_favoritos_productos[]
+  fotos                   tbl_fotos_productos[]
+  historial_precios       tbl_historial_precios[]
+  items_lista             tbl_items_lista_compras[]
+  tbl_categorias          tbl_categorias                 @relation(fields: [id_categoria], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_productos_categoria")
+  tbl_tiendas             tbl_tiendas                    @relation(fields: [id_tienda], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_productos_tienda")
+
+  @@index([id_tienda])
+  @@index([id_categoria])
+  @@index([estado_aprobacion, estado])
+  @@index([nombre])
+}
+
+model tbl_fotos_productos {
+  id            Int           @id @default(autoincrement())
+  id_producto   Int
+  url           String
+  posicion      Int           @default(0)
+  tbl_productos tbl_productos @relation(fields: [id_producto], references: [id], onDelete: Cascade)
+
+  @@index([id_producto])
+}
+
+model tbl_historial_precios {
+  id                Int           @id @default(autoincrement())
+  id_producto       Int
+  precio_anterior   Decimal       @db.Decimal(10, 2)
+  precio_nuevo      Decimal       @db.Decimal(10, 2)
+  cambiado_en       DateTime      @default(now()) @db.Timestamptz(6)
+  id_usuario_cambio Int
+  tbl_productos     tbl_productos @relation(fields: [id_producto], references: [id], onDelete: Cascade)
+  tbl_usuarios      tbl_usuarios  @relation(fields: [id_usuario_cambio], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_producto, cambiado_en(sort: Desc)])
+}
+
+model tbl_favoritos_productos {
+  id_comprador        Int
+  id_producto         Int
+  fecha_hora_registro DateTime      @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios  @relation(fields: [id_comprador], references: [id], onDelete: Cascade)
+  tbl_productos       tbl_productos @relation(fields: [id_producto], references: [id], onDelete: Cascade)
+
+  @@id([id_comprador, id_producto])
+}
+
+model tbl_favoritos_tiendas {
+  id_comprador        Int
+  id_tienda           Int
+  fecha_hora_registro DateTime     @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_comprador], references: [id], onDelete: Cascade)
+  tbl_tiendas         tbl_tiendas  @relation(fields: [id_tienda], references: [id], onDelete: Cascade)
+
+  @@id([id_comprador, id_tienda])
+}
+
+model tbl_listas_compras {
+  id                  Int                       @id @default(autoincrement())
+  id_comprador        Int
+  estado              String                    @default("OPEN") @db.VarChar(20)
+  abierta_en          DateTime                  @default(now()) @db.Timestamptz(6)
+  completada_en       DateTime?                 @db.Timestamptz(6)
+  id_usuario_registro Int?
+  fecha_hora_registro DateTime?                 @default(now()) @db.Timestamptz(6)
+  items               tbl_items_lista_compras[]
+  tbl_usuarios        tbl_usuarios              @relation(fields: [id_comprador], references: [id], onDelete: Cascade)
+
+  @@index([id_comprador, estado])
+}
+
+model tbl_items_lista_compras {
+  id                  Int                @id @default(autoincrement())
+  id_lista            Int
+  tipo                String             @db.VarChar(10)
+  id_producto         Int?
+  texto_manual        String?
+  cantidad            Int                @default(1)
+  comprado            Boolean            @default(false)
+  comprado_en         DateTime?          @db.Timestamptz(6)
+  comentario          String?
+  snapshot_precio     Decimal?           @db.Decimal(10, 2)
+  snapshot_id_tienda  Int?
+  snapshot_id_galeria Int?
+  snapshot_id_zona    Int?
+  snapshot_id_ciudad  Int?
+  id_usuario_registro Int?
+  fecha_hora_registro DateTime?          @default(now()) @db.Timestamptz(6)
+  tbl_listas_compras  tbl_listas_compras @relation(fields: [id_lista], references: [id], onDelete: Cascade)
+  tbl_productos       tbl_productos?     @relation(fields: [id_producto], references: [id])
+
+  @@index([id_lista])
+  @@index([id_producto])
+  @@index([comprado])
+  @@index([comprado_en])
+}
+
+model tbl_calificaciones_productos {
+  id                  Int           @id @default(autoincrement())
+  id_comprador        Int
+  id_producto         Int
+  estrellas           Int
+  comentario          String?
+  calificado_en       DateTime      @default(now()) @db.Timestamptz(6)
+  id_usuario_registro Int?
+  fecha_hora_registro DateTime?     @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios  @relation(fields: [id_comprador], references: [id], onDelete: Cascade)
+  tbl_productos       tbl_productos @relation(fields: [id_producto], references: [id], onDelete: Cascade)
+
+  @@index([id_comprador, id_producto])
+  @@index([calificado_en])
+}
+
+model tbl_calificaciones_tiendas {
+  id                  Int          @id @default(autoincrement())
+  id_comprador        Int
+  id_tienda           Int
+  estrellas           Int
+  comentario          String?
+  calificado_en       DateTime     @default(now()) @db.Timestamptz(6)
+  id_usuario_registro Int?
+  fecha_hora_registro DateTime?    @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_comprador], references: [id], onDelete: Cascade)
+  tbl_tiendas         tbl_tiendas  @relation(fields: [id_tienda], references: [id], onDelete: Cascade)
+
+  @@index([id_comprador, id_tienda])
+  @@index([calificado_en])
+}
+
+model tbl_agregados_cal_productos {
+  id             Int           @id @default(autoincrement())
+  id_producto    Int           @unique
+  promedio       Decimal       @default(0) @db.Decimal(3, 2)
+  total          Int           @default(0)
+  actualizado_en DateTime      @default(now()) @db.Timestamptz(6)
+  tbl_productos  tbl_productos @relation(fields: [id_producto], references: [id], onDelete: Cascade)
+}
+
+model tbl_agregados_cal_tiendas {
+  id             Int         @id @default(autoincrement())
+  id_tienda      Int         @unique
+  promedio       Decimal     @default(0) @db.Decimal(3, 2)
+  total          Int         @default(0)
+  actualizado_en DateTime    @default(now()) @db.Timestamptz(6)
+  tbl_tiendas    tbl_tiendas @relation(fields: [id_tienda], references: [id], onDelete: Cascade)
+}
+
+model tbl_tickets {
+  id                      Int                           @id @default(autoincrement())
+  tipo                    String                        @db.VarChar(20)
+  objetivo                String                        @db.VarChar(10)
+  id_tienda               Int?
+  asunto                  String                        @db.VarChar(200)
+  estado                  String                        @default("PENDIENTE") @db.VarChar(30)
+  ultimo_mensaje_en       DateTime                      @default(now()) @db.Timestamptz(6)
+  cerrado_por             String?                       @db.VarChar(10)
+  motivo_cierre           String?                       @db.VarChar(30)
+  nota_cierre             String?
+  id_creador              Int
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?                     @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?                     @db.Timestamptz(6)
+  estados_lectura         tbl_estados_lectura_tickets[]
+  mensajes                tbl_mensajes_tickets[]
+  participantes           tbl_participantes_tickets[]
+  tbl_usuarios            tbl_usuarios                  @relation(fields: [id_creador], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tbl_tiendas             tbl_tiendas?                  @relation(fields: [id_tienda], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([estado, ultimo_mensaje_en])
+  @@index([objetivo, id_tienda])
+}
+
+model tbl_participantes_tickets {
+  id_ticket    Int
+  id_usuario   Int
+  tbl_tickets  tbl_tickets  @relation(fields: [id_ticket], references: [id], onDelete: Cascade)
+  tbl_usuarios tbl_usuarios @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+
+  @@id([id_ticket, id_usuario])
+}
+
+model tbl_mensajes_tickets {
+  id                  Int          @id @default(autoincrement())
+  id_ticket           Int
+  id_autor            Int
+  cuerpo              String
+  fecha_hora_registro DateTime     @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_autor], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tbl_tickets         tbl_tickets  @relation(fields: [id_ticket], references: [id], onDelete: Cascade)
+
+  @@index([id_ticket, fecha_hora_registro])
+}
+
+model tbl_estados_lectura_tickets {
+  id_ticket      Int
+  id_usuario     Int
+  ultima_lectura DateTime     @default(now()) @db.Timestamptz(6)
+  tbl_tickets    tbl_tickets  @relation(fields: [id_ticket], references: [id], onDelete: Cascade)
+  tbl_usuarios   tbl_usuarios @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+
+  @@id([id_ticket, id_usuario])
+}
+
+model tbl_planes {
+  id                      Int                           @id @default(autoincrement())
+  tipo                    String                        @db.VarChar(20)
+  nombre                  String                        @default("") @db.VarChar(100)
+  precio                  Decimal                       @db.Decimal(10, 2)
+  moneda                  String                        @default("PEN") @db.VarChar(5)
+  duracion_dias           Int
+  activo                  Boolean                       @default(true)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?                     @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?                     @db.Timestamptz(6)
+  solicitudes_suscripcion tbl_solicitudes_suscripcion[]
+  caracteristicas         tbl_caracteristicas_plan[]
+}
+
+model tbl_caracteristicas_plan {
+  id      Int        @id @default(autoincrement())
+  id_plan Int
+  texto   String     @db.VarChar(200)
+  orden   Int        @default(0)
+  plan    tbl_planes @relation(fields: [id_plan], references: [id], onDelete: Cascade)
+
+  @@index([id_plan])
+}
+
+model tbl_metodos_pago {
+  id                      Int       @id @default(autoincrement())
+  nombre_banco            String?   @db.VarChar(100)
+  titular                 String?   @db.VarChar(150)
+  numero_cuenta           String?   @db.VarChar(50)
+  activo                  Boolean   @default(true)
+  eliminado_en            DateTime? @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime? @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime? @db.Timestamptz(6)
+  tipo                    String    @db.VarChar(20)
+  cci                     String?   @db.VarChar(20)
+  numero_celular          String?   @db.VarChar(9)
+}
+
+model tbl_solicitudes_suscripcion {
+  id                      Int                                    @id @default(autoincrement())
+  id_tienda               Int
+  tipo_plan_solicitado    String                                 @db.VarChar(20)
+  id_metodo_pago          Int
+  estado                  String                                 @default("PENDIENTE") @db.VarChar(20)
+  motivo_rechazo          String?
+  solicitado_en           DateTime                               @default(now()) @db.Timestamptz(6)
+  decidido_en             DateTime?                              @db.Timestamptz(6)
+  id_vendedor             Int
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime?                              @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime?                              @db.Timestamptz(6)
+  id_plan                 Int?
+  archivos                tbl_archivos_solicitudes_suscripcion[]
+  plan                    tbl_planes?                            @relation(fields: [id_plan], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tbl_tiendas             tbl_tiendas                            @relation(fields: [id_tienda], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tbl_usuarios            tbl_usuarios                           @relation(fields: [id_vendedor], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_tienda])
+  @@index([estado])
+  @@index([id_plan])
+}
+
+model tbl_archivos_solicitudes_suscripcion {
+  id                          Int                         @id @default(autoincrement())
+  id_solicitud                Int
+  url_archivo                 String
+  tipo_archivo                String                      @db.VarChar(10)
+  tamano_bytes                Int
+  es_comprobante              Boolean                     @default(false)
+  tbl_solicitudes_suscripcion tbl_solicitudes_suscripcion @relation(fields: [id_solicitud], references: [id], onDelete: Cascade)
+
+  @@index([id_solicitud])
+}
+
+model tbl_suscripciones_activas {
+  id          Int         @id @default(autoincrement())
+  id_tienda   Int         @unique
+  tipo_plan   String      @db.VarChar(20)
+  inicio_en   DateTime    @db.Timestamptz(6)
+  fin_en      DateTime    @db.Timestamptz(6)
+  estado      String      @default("ACTIVE") @db.VarChar(10)
+  tbl_tiendas tbl_tiendas @relation(fields: [id_tienda], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([estado, fin_en])
+}
+
+model tbl_transacciones_suscripcion {
+  id                  Int         @id @default(autoincrement())
+  id_tienda           Int
+  id_solicitud        Int?
+  monto               Decimal     @db.Decimal(10, 2)
+  id_metodo_pago      Int
+  pagado_en           DateTime?   @db.Timestamptz(6)
+  inicio_en           DateTime    @db.Timestamptz(6)
+  fin_en              DateTime    @db.Timestamptz(6)
+  estado              String      @default("ACTIVE") @db.VarChar(10)
+  fecha_hora_registro DateTime?   @default(now()) @db.Timestamptz(6)
+  tbl_tiendas         tbl_tiendas @relation(fields: [id_tienda], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_tienda])
+}
+
+model tbl_log_envio_email {
+  id                  Int          @id @default(autoincrement())
+  tipo                String       @db.VarChar(30)
+  id_vendedor         Int
+  fecha_envio         DateTime     @db.Date
+  payload_hash        String?      @db.VarChar(64)
+  fecha_hora_registro DateTime     @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_vendedor], references: [id], onDelete: Cascade)
+
+  @@unique([id_vendedor, tipo, fecha_envio])
+}
+
+model tbl_versiones_terminos {
+  id                  Int                         @id @default(autoincrement())
+  numero_version      Int
+  titulo              String                      @db.VarChar(200)
+  contenido           String
+  es_vigente          Boolean                     @default(false)
+  publicado_en        DateTime?                   @db.Timestamptz(6)
+  fecha_hora_registro DateTime?                   @default(now()) @db.Timestamptz(6)
+  aceptaciones        tbl_aceptaciones_terminos[]
+}
+
+model tbl_versiones_privacidad {
+  id                  Int       @id @default(autoincrement())
+  numero_version      Int
+  titulo              String    @db.VarChar(200)
+  contenido           String
+  es_vigente          Boolean   @default(false)
+  publicado_en        DateTime? @db.Timestamptz(6)
+  fecha_hora_registro DateTime? @default(now()) @db.Timestamptz(6)
+}
+
+model tbl_aceptaciones_terminos {
+  id_usuario             Int
+  id_version_terminos    Int
+  aceptado_en            DateTime               @default(now()) @db.Timestamptz(6)
+  tbl_usuarios           tbl_usuarios           @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+  tbl_versiones_terminos tbl_versiones_terminos @relation(fields: [id_version_terminos], references: [id], onDelete: NoAction)
+
+  @@id([id_usuario, id_version_terminos])
+}
+
+model tbl_faqs {
+  id                      Int       @id @default(autoincrement())
+  pregunta                String
+  respuesta               String
+  audiencia               String    @db.VarChar(20)
+  activo                  Boolean   @default(true)
+  eliminado_en            DateTime? @db.Timestamptz(6)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime? @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime? @db.Timestamptz(6)
+}
+
+model tbl_plantillas_email {
+  id                      Int       @id @default(autoincrement())
+  nombre                  String    @unique @db.VarChar(100)
+  asunto_plantilla        String    @db.VarChar(200)
+  cuerpo_plantilla        String
+  variables_json          Json?
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime? @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime? @db.Timestamptz(6)
+}
+
+model tbl_config_notificaciones_push {
+  id                      Int       @id @default(autoincrement())
+  evento                  String    @unique @db.VarChar(100)
+  titulo                  String    @db.VarChar(200)
+  mensaje                 String    @db.VarChar(500)
+  rol_destinatario        String?   @db.VarChar(20)
+  activo                  Boolean   @default(true)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime? @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime? @db.Timestamptz(6)
+}
+
+model tbl_dispositivos_push {
+  id                Int          @id @default(autoincrement())
+  id_usuario        Int
+  token_dispositivo String       @db.VarChar(500)
+  plataforma        String       @db.VarChar(10)
+  activo            Boolean      @default(true)
+  ultima_conexion   DateTime?    @db.Timestamptz(6)
+  tbl_usuarios      tbl_usuarios @relation(fields: [id_usuario], references: [id], onDelete: Cascade)
+
+  @@unique([id_usuario, token_dispositivo])
+  @@index([id_usuario])
+}
+
+model tbl_log_auditoria {
+  id                  Int          @id @default(autoincrement())
+  id_actor            Int
+  accion              String       @db.VarChar(100)
+  tipo_entidad        String       @db.VarChar(50)
+  id_entidad          Int?
+  datos_antes         Json?
+  datos_despues       Json?
+  fecha_hora_registro DateTime     @default(now()) @db.Timestamptz(6)
+  tbl_usuarios        tbl_usuarios @relation(fields: [id_actor], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_actor])
+  @@index([tipo_entidad, id_entidad])
+}
+
+model tbl_configuracion_sistema {
+  id                      Int       @id @default(autoincrement())
+  clave                   String    @unique @db.VarChar(100)
+  valor                   String    @db.VarChar(500)
+  descripcion             String?   @db.VarChar(500)
+  id_usuario_registro     Int?
+  fecha_hora_registro     DateTime? @default(now()) @db.Timestamptz(6)
+  id_usuario_modificacion Int?
+  fecha_hora_modificacion DateTime? @db.Timestamptz(6)
+}
