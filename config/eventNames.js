@@ -27,6 +27,9 @@ module.exports = {
   RATING_PRODUCT_NEW: 'rating.product.new',
   RATING_STORE_NEW: 'rating.store.new',
 
+  // Eventos de cuenta (emitidos via user_event)
+  ACCOUNT_DISABLED: 'account.disabled',
+
   // Eventos de vendedor (dinamico: approval.{entityType}.updated)
   APPROVAL_UPDATED_PREFIX: 'approval',
 };

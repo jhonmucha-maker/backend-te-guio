@@ -155,7 +155,10 @@ const sendToUser = async (userId, eventType, extraData = {}) => {
         const error = result.reason;
         if (
           error.code === 'messaging/registration-token-not-registered' ||
-          error.code === 'messaging/invalid-registration-token'
+          error.code === 'messaging/invalid-registration-token' ||
+          error.code === 'messaging/mismatched-credential' ||
+          error.code === 'messaging/sender-id-mismatch' ||
+          error.code === 'messaging/invalid-package-name'
         ) {
           tokensToDeactivate.push(error.deviceId);
         } else {

@@ -1,6 +1,8 @@
 const prisma = require('../config/db');
-const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS } = require('../config/constants');
+const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS, AUTH_ERROR_CODES, AUTH_MESSAGES } = require('../config/constants');
 const notificationService = require('../services/notificationService');
+const { revokeRefreshTokensByUser } = require('../models/authModel');
+const { ACCOUNT_DISABLED } = require('../config/eventNames');
 const emailService = require('../services/emailService');
 const { EMAIL_TEMPLATE_DEFAULTS, TEMPLATE_SECTIONS, SAMPLE_DATA, buildHtmlFromSections } = require('../config/emailTemplateDefaults');
 const { PUSH_NOTIFICATION_DEFAULTS, PUSH_VARIABLE_MAP } = require('../config/pushNotificationDefaults');
@@ -962,6 +964,15 @@ const toggleUserActive = async (req, res) => {
         },
       });
     });
+
+    // Si se desactiva: revocar refresh tokens y notificar al usuario via SSE
+    if (!nuevoEstado) {
+      await revokeRefreshTokensByUser(userId);
+      notificationService.emitSSEOnly(userId, ACCOUNT_DISABLED, {
+        error: AUTH_ERROR_CODES.ACCOUNT_DISABLED,
+        message: AUTH_MESSAGES.ACCOUNT_DISABLED,
+      });
+    }
 
     res.json({ mensaje: nuevoEstado ? 'Usuario activado' : 'Usuario desactivado' });
   } catch (error) {

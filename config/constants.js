@@ -57,6 +57,14 @@ module.exports = {
     PREMIUM: 'PREMIUM',
   },
 
+  AUTH_ERROR_CODES: {
+    ACCOUNT_DISABLED: 'ACCOUNT_DISABLED',
+  },
+
+  AUTH_MESSAGES: {
+    ACCOUNT_DISABLED: 'Tu cuenta ha sido inhabilitada por un administrador',
+  },
+
   RATING_WINDOW_DAYS: 14,
   TICKET_SELLER_CLOSE_DAYS: 7,
   TIMEZONE: 'America/Lima',
