@@ -318,7 +318,7 @@ const unmarkPurchased = async (req, res) => {
       return res.status(404).json({ error: 'Item no encontrado' });
     }
     if (!item.comprado) {
-      return res.status(400).json({ error: 'El item no esta marcado como comprado' });
+      return res.json({ mensaje: 'El item ya no esta marcado como comprado' });
     }
 
     // Si la lista fue completada, revertirla a OPEN y eliminar la nueva lista vacía que se creó
@@ -374,15 +374,18 @@ const unmarkPurchased = async (req, res) => {
           _avg: { estrellas: true },
           _count: { id: true },
         });
+        const promedioProd = stats._avg.estrellas
+          ? parseFloat(Number(stats._avg.estrellas).toFixed(2))
+          : 0;
         await prisma.tbl_agregados_cal_productos.upsert({
           where: { id_producto: item.id_producto },
           create: {
             id_producto: item.id_producto,
-            promedio: stats._avg.estrellas || 0,
+            promedio: promedioProd,
             total: stats._count.id,
           },
           update: {
-            promedio: stats._avg.estrellas || 0,
+            promedio: promedioProd,
             total: stats._count.id,
             actualizado_en: new Date(),
           },
@@ -407,15 +410,18 @@ const unmarkPurchased = async (req, res) => {
             _avg: { estrellas: true },
             _count: { id: true },
           });
+          const promedioTienda = stats._avg.estrellas
+            ? parseFloat(Number(stats._avg.estrellas).toFixed(2))
+            : 0;
           await prisma.tbl_agregados_cal_tiendas.upsert({
             where: { id_tienda: item.snapshot_id_tienda },
             create: {
               id_tienda: item.snapshot_id_tienda,
-              promedio: stats._avg.estrellas || 0,
+              promedio: promedioTienda,
               total: stats._count.id,
             },
             update: {
-              promedio: stats._avg.estrellas || 0,
+              promedio: promedioTienda,
               total: stats._count.id,
               actualizado_en: new Date(),
             },

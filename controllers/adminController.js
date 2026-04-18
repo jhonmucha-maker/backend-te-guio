@@ -477,7 +477,7 @@ const approveProduct = async (req, res) => {
     if (toggle_active) {
       const producto = await prisma.tbl_productos.findFirst({
         where: { id: parseInt(id), estado_aprobacion: APPROVAL_STATUS.APROBADO, eliminado_en: null },
-        include: { tbl_tiendas: { select: { id_vendedor: true } } },
+        include: { tbl_tiendas: { select: { id_vendedor: true, nombre: true } } },
       });
       if (!producto) return res.status(400).json({ error: 'Producto no encontrado o no aprobado' });
 
@@ -503,7 +503,11 @@ const approveProduct = async (req, res) => {
       });
 
       const fotoToggle = await prisma.tbl_fotos_productos.findFirst({ where: { id_producto: parseInt(id) }, orderBy: { posicion: 'asc' }, select: { url: true } });
+      const estadoTextoProducto = nuevoEstado === PRODUCT_STATE.ACTIVE ? 'activado' : 'desactivado';
       notificationService.approvalUpdated(producto.tbl_tiendas.id_vendedor, 'product', parseInt(id), nuevoEstado, {
+        nombre_producto: producto.nombre,
+        nombre_tienda: producto.tbl_tiendas?.nombre || '',
+        estado: estadoTextoProducto,
         imagen_producto: fotoToggle?.url || null,
       });
 

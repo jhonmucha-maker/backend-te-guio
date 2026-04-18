@@ -363,11 +363,28 @@ const updateProduct = async (req, res) => {
       data.estado_aprobacion = APPROVAL_STATUS.PENDIENTE;
     }
 
+    // Detectar cambio real de precio
+    const precioAnterior = parseFloat(producto.precio);
+    const precioNuevo = req.body.precio !== undefined ? parseFloat(req.body.precio) : null;
+    const precioCambio = precioNuevo !== null && precioNuevo !== precioAnterior;
+
     const updated = await prisma.$transaction(async (tx) => {
       const prod = await tx.tbl_productos.update({
         where: { id: producto.id },
         data,
       });
+
+      // Registrar historial de precio si cambió
+      if (precioCambio) {
+        await tx.tbl_historial_precios.create({
+          data: {
+            id_producto: producto.id,
+            precio_anterior: precioAnterior,
+            precio_nuevo: precioNuevo,
+            id_usuario_cambio: req.user.id,
+          },
+        });
+      }
 
       // Guardar fotos nuevas si se subieron junto con la edición
       if (req.files && req.files.length > 0) {
@@ -394,6 +411,32 @@ const updateProduct = async (req, res) => {
       notificationService.newPendingApproval('product', { nombre_producto: req.body.nombre || producto.nombre, nombre_tienda: producto.tbl_tiendas.nombre, imagen_producto: fotoProducto?.url || null });
     }
 
+    // Notificar cambio de precio a compradores interesados (favoritos + listas de compras)
+    if (precioCambio) {
+      const favs = await prisma.tbl_favoritos_productos.findMany({
+        where: { id_producto: producto.id },
+        select: { id_comprador: true },
+      });
+      const itemsLista = await prisma.tbl_items_lista_compras.findMany({
+        where: { id_producto: producto.id, tipo: 'PRODUCT' },
+        select: { tbl_listas_compras: { select: { id_comprador: true } } },
+      });
+      const buyerIds = [...new Set([
+        ...favs.map(f => f.id_comprador),
+        ...itemsLista.map(i => i.tbl_listas_compras.id_comprador),
+      ])];
+      if (buyerIds.length > 0) {
+        const fotoProd = await prisma.tbl_fotos_productos.findFirst({ where: { id_producto: producto.id }, orderBy: { posicion: 'asc' }, select: { url: true } });
+        notificationService.productPriceChanged(producto.id, buyerIds, {
+          nombre_producto: req.body.nombre || producto.nombre,
+          precio_anterior: precioAnterior.toFixed(2),
+          precio_nuevo: precioNuevo.toFixed(2),
+          nombre_tienda: producto.tbl_tiendas.nombre,
+          imagen_producto: fotoProd?.url || null,
+        });
+      }
+    }
+
     res.json({ data: updated });
   } catch (error) {
     console.error('Error actualizando producto:', error);
@@ -410,7 +453,7 @@ const updatePrice = async (req, res) => {
   try {
     const producto = await prisma.tbl_productos.findFirst({
       where: { id: parseInt(req.params.id), eliminado_en: null },
-      include: { tbl_tiendas: { select: { id_vendedor: true, estado_aprobacion: true } } },
+      include: { tbl_tiendas: { select: { id_vendedor: true, estado_aprobacion: true, nombre: true } } },
     });
     if (!producto || producto.tbl_tiendas.id_vendedor !== req.user.id) {
       return res.status(404).json({ error: 'Producto no encontrado' });
@@ -446,13 +489,28 @@ const updatePrice = async (req, res) => {
       });
     });
 
-    // Notificar a compradores que tienen este producto en favoritos
+    // Notificar a compradores interesados (favoritos + listas de compras)
     const favs = await prisma.tbl_favoritos_productos.findMany({
       where: { id_producto: producto.id },
       select: { id_comprador: true },
     });
-    if (favs.length > 0) {
-      notificationService.productPriceChanged(producto.id, favs.map(f => f.id_comprador));
+    const itemsLista = await prisma.tbl_items_lista_compras.findMany({
+      where: { id_producto: producto.id, tipo: 'PRODUCT' },
+      select: { tbl_listas_compras: { select: { id_comprador: true } } },
+    });
+    const buyerIds = [...new Set([
+      ...favs.map(f => f.id_comprador),
+      ...itemsLista.map(i => i.tbl_listas_compras.id_comprador),
+    ])];
+    if (buyerIds.length > 0) {
+      const fotoProd = await prisma.tbl_fotos_productos.findFirst({ where: { id_producto: producto.id }, orderBy: { posicion: 'asc' }, select: { url: true } });
+      notificationService.productPriceChanged(producto.id, buyerIds, {
+        nombre_producto: producto.nombre,
+        precio_anterior: parseFloat(producto.precio).toFixed(2),
+        precio_nuevo: nuevoPrecio.toFixed(2),
+        nombre_tienda: producto.tbl_tiendas.nombre,
+        imagen_producto: fotoProd?.url || null,
+      });
     }
 
     res.json({ mensaje: 'Precio actualizado' });

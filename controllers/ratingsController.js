@@ -66,34 +66,46 @@ const rateProduct = async (req, res) => {
       },
     });
 
-    // Actualizar agregados
-    const stats = await prisma.tbl_calificaciones_productos.aggregate({
-      where: { id_producto },
-      _avg: { estrellas: true },
-      _count: { id: true },
-    });
+    // Operaciones secundarias (no deben bloquear la respuesta exitosa)
+    try {
+      const stats = await prisma.tbl_calificaciones_productos.aggregate({
+        where: { id_producto },
+        _avg: { estrellas: true },
+        _count: { id: true },
+      });
 
-    await prisma.tbl_agregados_cal_productos.upsert({
-      where: { id_producto },
-      create: {
-        id_producto,
-        promedio: stats._avg.estrellas || 0,
-        total: stats._count.id,
-      },
-      update: {
-        promedio: stats._avg.estrellas || 0,
-        total: stats._count.id,
-        actualizado_en: new Date(),
-      },
-    });
+      const promedio = stats._avg.estrellas
+        ? parseFloat(Number(stats._avg.estrellas).toFixed(2))
+        : 0;
+
+      await prisma.tbl_agregados_cal_productos.upsert({
+        where: { id_producto },
+        create: {
+          id_producto,
+          promedio,
+          total: stats._count.id,
+        },
+        update: {
+          promedio,
+          total: stats._count.id,
+          actualizado_en: new Date(),
+        },
+      });
+    } catch (aggErr) {
+      console.error('Error actualizando agregados de producto:', aggErr);
+    }
 
     // Notificar al vendedor via SSE
-    const producto = await prisma.tbl_productos.findUnique({
-      where: { id: id_producto },
-      select: { tbl_tiendas: { select: { id_vendedor: true } } },
-    });
-    if (producto?.tbl_tiendas?.id_vendedor) {
-      notificationService.ratingProductNew(producto.tbl_tiendas.id_vendedor, id_producto);
+    try {
+      const producto = await prisma.tbl_productos.findUnique({
+        where: { id: id_producto },
+        select: { tbl_tiendas: { select: { id_vendedor: true } } },
+      });
+      if (producto?.tbl_tiendas?.id_vendedor) {
+        notificationService.ratingProductNew(producto.tbl_tiendas.id_vendedor, id_producto);
+      }
+    } catch (notifErr) {
+      console.error('Error notificando calificacion de producto:', notifErr);
     }
 
     res.status(201).json({ data: rating });
@@ -154,34 +166,46 @@ const rateStore = async (req, res) => {
       },
     });
 
-    // Actualizar agregados
-    const stats = await prisma.tbl_calificaciones_tiendas.aggregate({
-      where: { id_tienda },
-      _avg: { estrellas: true },
-      _count: { id: true },
-    });
+    // Operaciones secundarias (no deben bloquear la respuesta exitosa)
+    try {
+      const stats = await prisma.tbl_calificaciones_tiendas.aggregate({
+        where: { id_tienda },
+        _avg: { estrellas: true },
+        _count: { id: true },
+      });
 
-    await prisma.tbl_agregados_cal_tiendas.upsert({
-      where: { id_tienda },
-      create: {
-        id_tienda,
-        promedio: stats._avg.estrellas || 0,
-        total: stats._count.id,
-      },
-      update: {
-        promedio: stats._avg.estrellas || 0,
-        total: stats._count.id,
-        actualizado_en: new Date(),
-      },
-    });
+      const promedio = stats._avg.estrellas
+        ? parseFloat(Number(stats._avg.estrellas).toFixed(2))
+        : 0;
+
+      await prisma.tbl_agregados_cal_tiendas.upsert({
+        where: { id_tienda },
+        create: {
+          id_tienda,
+          promedio,
+          total: stats._count.id,
+        },
+        update: {
+          promedio,
+          total: stats._count.id,
+          actualizado_en: new Date(),
+        },
+      });
+    } catch (aggErr) {
+      console.error('Error actualizando agregados de tienda:', aggErr);
+    }
 
     // Notificar al vendedor via SSE
-    const tienda = await prisma.tbl_tiendas.findUnique({
-      where: { id: id_tienda },
-      select: { id_vendedor: true },
-    });
-    if (tienda?.id_vendedor) {
-      notificationService.ratingStoreNew(tienda.id_vendedor, id_tienda);
+    try {
+      const tienda = await prisma.tbl_tiendas.findUnique({
+        where: { id: id_tienda },
+        select: { id_vendedor: true },
+      });
+      if (tienda?.id_vendedor) {
+        notificationService.ratingStoreNew(tienda.id_vendedor, id_tienda);
+      }
+    } catch (notifErr) {
+      console.error('Error notificando calificacion de tienda:', notifErr);
     }
 
     res.status(201).json({ data: rating });
@@ -209,13 +233,13 @@ const getMyRatings = async (req, res) => {
     res.json({
       data: {
         productos: productRatings.map(r => ({
-          id: r.id, estrellas: r.estrellas, comentario: r.comentario,
-          fecha: r.calificado_en,
+          id: r.id, estrellas: r.estrellas, puntuacion: r.estrellas, comentario: r.comentario,
+          fecha: r.calificado_en, fecha_hora_registro: r.calificado_en,
           producto: r.tbl_productos,
         })),
         tiendas: storeRatings.map(r => ({
-          id: r.id, estrellas: r.estrellas, comentario: r.comentario,
-          fecha: r.calificado_en,
+          id: r.id, estrellas: r.estrellas, puntuacion: r.estrellas, comentario: r.comentario,
+          fecha: r.calificado_en, fecha_hora_registro: r.calificado_en,
           tienda: r.tbl_tiendas,
         })),
       },

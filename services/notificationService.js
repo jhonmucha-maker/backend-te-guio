@@ -98,9 +98,9 @@ class NotificationService extends EventEmitter {
     this.emitToUser(sellerId, SUBSCRIPTION_ACTIVE_UPDATED, { store_id: storeId, status, ...extraData });
   }
 
-  productPriceChanged(productId, buyerIds) {
+  productPriceChanged(productId, buyerIds, extraData = {}) {
     buyerIds.forEach(uid => {
-      this.emitToUser(uid, PRODUCT_PRICE_CHANGED, { product_id: productId });
+      this.emitToUser(uid, PRODUCT_PRICE_CHANGED, { product_id: productId, ...extraData });
     });
   }
 

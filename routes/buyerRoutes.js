@@ -51,11 +51,11 @@ router.post('/ratings/stores/:store_id', ...auth, validateRating, rateStore);
 // Rutas alternativas (singular, ID desde body) para compatibilidad con frontend
 router.post('/ratings/product', ...auth, validateRating, (req, res) => {
   req.params.product_id = req.body.id_producto || req.body.product_id;
-  rateProduct(req, res);
+  return rateProduct(req, res);
 });
 router.post('/ratings/store', ...auth, validateRating, (req, res) => {
   req.params.store_id = req.body.id_tienda || req.body.store_id;
-  rateStore(req, res);
+  return rateStore(req, res);
 });
 router.get('/ratings', ...auth, getMyRatings);
 
