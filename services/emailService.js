@@ -4,6 +4,7 @@ const fs = require('fs');
 const prisma = require('../config/db');
 
 let transporter = null;
+let smtpVerified = false;
 
 const getTransporter = () => {
   if (transporter) return transporter;
@@ -17,8 +18,12 @@ const getTransporter = () => {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
     console.log('[EMAIL] Transporter SMTP configurado');
+    console.log(`[EMAIL] Host=${process.env.SMTP_HOST} Port=${process.env.SMTP_PORT} User=${process.env.SMTP_USER} Secure=${process.env.SMTP_SECURE}`);
   } else {
     transporter = {
       sendMail: async (options) => {
@@ -29,11 +34,28 @@ const getTransporter = () => {
         console.log('══════════════════════════════════════════');
         return { messageId: `dev-${Date.now()}` };
       },
+      verify: async () => true,
     };
     console.log('[EMAIL] Modo desarrollo: emails se imprimen en consola');
+    console.warn('[EMAIL] Variables SMTP_HOST o SMTP_USER no definidas — los emails NO se enviarán realmente');
   }
 
   return transporter;
+};
+
+// Verificar conexión SMTP al arrancar el servidor
+const verifySmtp = async () => {
+  try {
+    const transport = getTransporter();
+    await transport.verify();
+    smtpVerified = true;
+    console.log('[EMAIL] ✅ Conexión SMTP verificada — emails listos para enviar');
+  } catch (err) {
+    smtpVerified = false;
+    console.error('[EMAIL] ❌ Conexión SMTP FALLIDA:', err.message);
+    console.error('[EMAIL] Code:', err.code, '| Command:', err.command);
+    console.error('[EMAIL] Los emails NO se podrán enviar hasta que SMTP funcione');
+  }
 };
 
 const sendEmail = async (to, subject, body, attachments = []) => {
@@ -43,15 +65,23 @@ const sendEmail = async (to, subject, body, attachments = []) => {
     return false;
   }
 
-  const transport = getTransporter();
-  await transport.sendMail({
-    from: process.env.SMTP_FROM || '"Marketplace" <noreply@marketplace.pe>',
-    to,
-    subject,
-    html: body,
-    attachments,
-  });
-  return true;
+  try {
+    const transport = getTransporter();
+    const info = await transport.sendMail({
+      from: process.env.SMTP_FROM || '"Marketplace" <noreply@marketplace.pe>',
+      to,
+      subject,
+      html: body,
+      attachments,
+    });
+    console.log(`[EMAIL] ✅ Enviado a ${to} | asunto="${subject}" | messageId=${info.messageId}`);
+    return true;
+  } catch (err) {
+    console.error(`[EMAIL] ❌ Error enviando a ${to} | asunto="${subject}"`);
+    console.error(`[EMAIL] Error: ${err.message}`);
+    console.error(`[EMAIL] Code: ${err.code} | Command: ${err.command || 'N/A'} | ResponseCode: ${err.responseCode || 'N/A'}`);
+    return false;
+  }
 };
 
 const replaceTemplateVars = (text, vars) => {
@@ -144,6 +174,7 @@ const sendSellerApprovalEmail = async (correo, storeName, sellerName) => {
 };
 
 module.exports = {
+  verifySmtp,
   sendEmail,
   sendTemplateEmail,
   sendVerificationEmail,

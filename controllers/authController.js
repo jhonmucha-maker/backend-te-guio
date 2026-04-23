@@ -197,7 +197,10 @@ const registerBuyer = async (req, res) => {
     const expira_en = new Date(Date.now() + 15 * 60 * 1000); // 15 min
     await createVerificationCode(nuevoUsuario.id, codigo, expira_en);
 
-    await sendVerificationEmail(correo, codigo, nombre);
+    const emailEnviado = await sendVerificationEmail(correo, codigo, nombre);
+    if (!emailEnviado) {
+      console.warn(`[AUTH] Usuario comprador ${correo} creado pero email de verificación NO se envió`);
+    }
 
     res.status(201).json({
       mensaje: 'Registro exitoso. Verifica tu email.',
@@ -264,7 +267,10 @@ const registerSeller = async (req, res) => {
     const expira_en = new Date(Date.now() + 15 * 60 * 1000);
     await createVerificationCode(nuevoUsuario.id, codigo, expira_en);
 
-    await sendVerificationEmail(correo, codigo, nombre);
+    const emailEnviado = await sendVerificationEmail(correo, codigo, nombre);
+    if (!emailEnviado) {
+      console.warn(`[AUTH] Usuario vendedor ${correo} creado pero email de verificación NO se envió`);
+    }
 
     // Notificar a admins sobre nueva solicitud de vendedor
     notificationService.newPendingApproval('seller', { nombre_vendedor: nombre });
@@ -341,7 +347,11 @@ const resendEmailCode = async (req, res) => {
     const expira_en = new Date(Date.now() + 15 * 60 * 1000);
     await createVerificationCode(usuario.id, codigo, expira_en);
 
-    await sendVerificationEmail(correo, codigo, usuario.nombre);
+    const emailEnviado = await sendVerificationEmail(correo, codigo, usuario.nombre);
+    if (!emailEnviado) {
+      console.warn(`[AUTH] Reenvío de código a ${correo} falló`);
+      return res.status(500).json({ error: 'No se pudo enviar el código. Intenta de nuevo.' });
+    }
 
     res.json({ mensaje: 'Codigo reenviado' });
   } catch (error) {
@@ -370,7 +380,10 @@ const forgotPassword = async (req, res) => {
 
     await createPasswordResetToken(usuario.id, tokenHash, expira_en);
 
-    await sendPasswordResetEmail(correo, token, usuario.nombre);
+    const emailEnviado = await sendPasswordResetEmail(correo, token, usuario.nombre);
+    if (!emailEnviado) {
+      console.warn(`[AUTH] Email de recuperación a ${correo} falló`);
+    }
 
     res.json({ mensaje: 'Si el correo existe, recibiras un enlace de recuperacion' });
   } catch (error) {

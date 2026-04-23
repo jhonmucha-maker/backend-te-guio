@@ -17,6 +17,7 @@ const { setupSSE } = require('./services/sseService');
 const { scheduleDailyJob } = require('./services/cronService');
 const { initFirebase } = require('./config/firebase');
 const { syncPushTemplates } = require('./services/pushService');
+const { verifySmtp } = require('./services/emailService');
 
 const app = express();
 const PORT = process.env.PORT || 4002;
@@ -97,6 +98,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Push] BACKEND_URL=${process.env.BACKEND_URL || '(no definido)'}`);
   console.log(`[Push] RAILWAY_PUBLIC_DOMAIN=${process.env.RAILWAY_PUBLIC_DOMAIN || '(no definido)'}`);
   console.log(`[Push] FIREBASE_SERVICE_ACCOUNT=${process.env.FIREBASE_SERVICE_ACCOUNT ? 'configurado (' + process.env.FIREBASE_SERVICE_ACCOUNT.substring(0, 30) + '...)' : '(no definido)'}`);
+
+  // Verificar conexión SMTP para emails
+  verifySmtp();
 
   // Sincronizar templates de push (crear faltantes, eliminar obsoletos)
   syncPushTemplates();

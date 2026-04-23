@@ -223,8 +223,7 @@ const QUERIES = {
     sql: `
       SELECT domain_schema || '.' || domain_name AS key,
              data_type
-               || ' | default=' || COALESCE(domain_default,'NULL')
-               || ' | nullable=' || is_nullable AS value
+               || ' | default=' || COALESCE(domain_default,'NULL') AS value
       FROM information_schema.domains
       WHERE domain_schema NOT IN ('pg_catalog','information_schema')
       ORDER BY 1;
@@ -241,13 +240,13 @@ function runQuery(connUrl, sql) {
   const out = execFileSync(
     PSQL,
     [
-      connUrl,
       '-X',
       '-A',
       '-t',
       '-F', '\t',
       '-v', 'ON_ERROR_STOP=1',
       '-c', sql,
+      '-d', connUrl,
     ],
     { encoding: 'utf8', maxBuffer: 1024 * 1024 * 200 }
   );
