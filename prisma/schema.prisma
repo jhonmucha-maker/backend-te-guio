@@ -607,7 +607,7 @@ model tbl_suscripciones_activas {
 model tbl_transacciones_suscripcion {
   id                  Int         @id @default(autoincrement())
   id_tienda           Int
-  id_solicitud        Int?
+  id_solicitud        Int?        @unique
   monto               Decimal     @db.Decimal(10, 2)
   id_metodo_pago      Int
   pagado_en           DateTime?   @db.Timestamptz(6)

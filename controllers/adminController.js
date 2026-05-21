@@ -2,11 +2,20 @@ const prisma = require('../config/db');
 const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS, AUTH_ERROR_CODES, AUTH_MESSAGES } = require('../config/constants');
 const notificationService = require('../services/notificationService');
 const { revokeRefreshTokensByUser } = require('../models/authModel');
-const { ACCOUNT_DISABLED } = require('../config/eventNames');
+const { ACCOUNT_DISABLED, SUBSCRIPTION_REQUEST_UPDATED } = require('../config/eventNames');
 const emailService = require('../services/emailService');
 const { EMAIL_TEMPLATE_DEFAULTS, TEMPLATE_SECTIONS, SAMPLE_DATA, buildHtmlFromSections } = require('../config/emailTemplateDefaults');
 const { PUSH_NOTIFICATION_DEFAULTS, PUSH_VARIABLE_MAP } = require('../config/pushNotificationDefaults');
 const pushService = require('../services/pushService');
+
+// Filtro reutilizable para excluir transacciones de tiendas o vendedores eliminados (soft-delete).
+// Usado por finanzas, dashboard y reportes para mantener Single Source of Truth.
+const VALID_TRANSACTION_WHERE = {
+  tbl_tiendas: {
+    eliminado_en: null,
+    tbl_usuarios: { eliminado_en: null },
+  },
+};
 
 // ==================== DASHBOARD ====================
 const getDashboard = async (req, res) => {
@@ -37,14 +46,15 @@ const getDashboard = async (req, res) => {
       prisma.tbl_tiendas.count({
         where: { eliminado_en: null, suscripcion_activa: { ...activeSubWhere, tipo_plan: PLAN_TYPE.ESTANDAR } },
       }),
-      // Ingresos del mes: usa pagado_en (explícitamente seteado al aprobar)
+      // Ingresos del mes: usa pagado_en (criterio temporal unificado) y excluye tiendas/vendedores eliminados
       prisma.tbl_transacciones_suscripcion.aggregate({
         _sum: { monto: true },
-        where: { pagado_en: { gte: startOfMonth } },
+        where: { ...VALID_TRANSACTION_WHERE, pagado_en: { gte: startOfMonth } },
       }),
-      // Ingresos totales: todas las transacciones
+      // Ingresos totales: excluye transacciones de tiendas o vendedores eliminados
       prisma.tbl_transacciones_suscripcion.aggregate({
         _sum: { monto: true },
+        where: { ...VALID_TRANSACTION_WHERE },
       }),
     ]);
 
@@ -315,7 +325,9 @@ const approveStore = async (req, res) => {
         nombre_vendedor: tienda.tbl_usuarios?.nombre || '',
         estado: estadoTexto,
       });
-  
+
+      // Sincronización en tiempo real: avisar a compradores con favoritos/lista para que refresquen.
+      notificationService.notifyBuyersStoreVisibilityChanged(parseInt(id));
 
       return res.json({ mensaje: `Tienda ${nuevoEstado ? 'habilitada' : 'deshabilitada'}` });
     }
@@ -646,10 +658,22 @@ const approveSubscription = async (req, res) => {
           },
         });
 
-        await tx.tbl_transacciones_suscripcion.create({
-          data: {
+        // Idempotente: si la solicitud se aprueba dos veces (doble click u otra carrera),
+        // no se crean transacciones duplicadas. id_solicitud es UNIQUE.
+        await tx.tbl_transacciones_suscripcion.upsert({
+          where: { id_solicitud: parseInt(id) },
+          create: {
             id_tienda: solicitud.id_tienda,
             id_solicitud: parseInt(id),
+            monto: plan.precio,
+            id_metodo_pago: solicitud.id_metodo_pago,
+            pagado_en: now,
+            inicio_en: now,
+            fin_en: finEn,
+            estado: SUBSCRIPTION_STATUS.ACTIVE,
+          },
+          update: {
+            id_tienda: solicitud.id_tienda,
             monto: plan.precio,
             id_metodo_pago: solicitud.id_metodo_pago,
             pagado_en: now,
@@ -748,15 +772,21 @@ const getFinanceSummary = async (req, res) => {
     startOfMonth.setHours(0, 0, 0, 0);
 
     const [totalIngresos, monthlyIngresos, activeSubsAgg, premiumPlan] = await Promise.all([
-      prisma.tbl_transacciones_suscripcion.aggregate({ _sum: { monto: true } }),
+      // Total: excluir transacciones de tiendas o vendedores eliminados
       prisma.tbl_transacciones_suscripcion.aggregate({
         _sum: { monto: true },
-        where: { fecha_hora_registro: { gte: startOfMonth } },
+        where: { ...VALID_TRANSACTION_WHERE },
       }),
+      // Mensual: criterio temporal unificado a pagado_en, mismo filtro de validez
+      prisma.tbl_transacciones_suscripcion.aggregate({
+        _sum: { monto: true },
+        where: { ...VALID_TRANSACTION_WHERE, pagado_en: { gte: startOfMonth } },
+      }),
+      // Activas: solo transacciones ACTIVE en tiendas/vendedores no eliminados
       prisma.tbl_transacciones_suscripcion.aggregate({
         _sum: { monto: true },
         _count: true,
-        where: { estado: SUBSCRIPTION_STATUS.ACTIVE },
+        where: { ...VALID_TRANSACTION_WHERE, estado: SUBSCRIPTION_STATUS.ACTIVE },
       }),
       prisma.tbl_planes.findFirst({
         where: { tipo: PLAN_TYPE.PREMIUM, activo: true },
@@ -781,6 +811,8 @@ const getTransactions = async (req, res) => {
   try {
     const [transactions, metodosPago] = await Promise.all([
       prisma.tbl_transacciones_suscripcion.findMany({
+        // Excluir transacciones de tiendas o vendedores eliminados
+        where: { ...VALID_TRANSACTION_WHERE },
         include: {
           tbl_tiendas: {
             select: {
@@ -978,6 +1010,18 @@ const toggleUserActive = async (req, res) => {
       });
     }
 
+    // Si la cascada afectó tiendas del vendedor, notificar a compradores con favoritos / lista
+    // para que su UI refleje al instante el cambio de visibilidad de cada tienda.
+    if (esVendedor) {
+      const tiendasAfectadas = await prisma.tbl_tiendas.findMany({
+        where: { id_vendedor: userId, eliminado_en: null },
+        select: { id: true },
+      });
+      tiendasAfectadas.forEach(t =>
+        notificationService.notifyBuyersStoreVisibilityChanged(t.id),
+      );
+    }
+
     res.json({ mensaje: nuevoEstado ? 'Usuario activado' : 'Usuario desactivado' });
   } catch (error) {
     console.error('Error toggleUserActive:', error);
@@ -1019,6 +1063,13 @@ const softDeleteUser = async (req, res) => {
         tipo_entidad: 'tbl_usuarios',
         id_entidad: userId,
       },
+    });
+
+    // Refrescar pantalla de Finanzas (Web/APK) para que admins vean los nuevos totales
+    // sin transacciones del usuario eliminado. Reutiliza el evento al que ya estan suscritos.
+    notificationService.emitSSEToRole('ADMINISTRADOR', SUBSCRIPTION_REQUEST_UPDATED, {
+      reason: 'user_deleted',
+      id_usuario: userId,
     });
 
     res.json({ mensaje: 'Usuario eliminado' });
@@ -1498,9 +1549,13 @@ const getReports = async (req, res) => {
       prisma.tbl_usuarios.count({ where: { tbl_roles: { nombre: ROLES.COMPRADOR }, activo: true, eliminado_en: null } }),
       prisma.tbl_usuarios.count({ where: { tbl_roles: { nombre: ROLES.VENDEDOR }, activo: true, eliminado_en: null } }),
       prisma.tbl_suscripciones_activas.count({ where: { estado: SUBSCRIPTION_STATUS.ACTIVE, fin_en: { gte: now } } }),
+      // Ingresos del periodo: usa pagado_en (criterio temporal unificado) y excluye tiendas/vendedores eliminados
       prisma.tbl_transacciones_suscripcion.aggregate({
         _sum: { monto: true },
-        where: since ? { fecha_hora_registro: { gte: since } } : {},
+        where: {
+          ...VALID_TRANSACTION_WHERE,
+          ...(since ? { pagado_en: { gte: since } } : {}),
+        },
       }),
     ]);
 
@@ -1752,6 +1807,13 @@ const cascadeDeleteSeller = async (req, res) => {
       data: { id_actor: req.user.id, accion: 'VENDEDOR_ELIMINADO_CASCADE', tipo_entidad: 'tbl_usuarios', id_entidad: sellerId },
     });
 
+    // Refrescar pantalla de Finanzas (Web/APK) para que admins vean los nuevos totales
+    // sin transacciones del vendedor eliminado. Reutiliza el evento al que ya estan suscritos.
+    notificationService.emitSSEToRole('ADMINISTRADOR', SUBSCRIPTION_REQUEST_UPDATED, {
+      reason: 'seller_cascade_deleted',
+      id_vendedor: sellerId,
+    });
+
     res.json({ mensaje: 'Vendedor eliminado con cascada' });
   } catch (error) {
     console.error('Error eliminando vendedor:', error);
@@ -1799,7 +1861,7 @@ const exportSellersExcel = async (req, res) => {
       { header: 'DNI', key: 'dni', width: 15 },
       { header: 'Estado Aprobación', key: 'estado', width: 18 },
       { header: 'Tipo Comprobante', key: 'tipo_comprobante', width: 18 },
-      { header: 'Tiendas', key: 'tiendas', width: 35 },
+      { header: 'Tienda', key: 'tiendas', width: 35 },
       { header: 'Suscripción', key: 'suscripcion', width: 18 },
       { header: 'Estado Suscripción', key: 'estado_suscripcion', width: 20 },
       { header: 'Fecha Venc. Suscripción', key: 'fecha_venc_suscripcion', width: 24 },
@@ -1813,31 +1875,7 @@ const exportSellersExcel = async (req, res) => {
     sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
 
     sellers.forEach(s => {
-      const tiendasTexto = s.tiendas.map(t => {
-        const galeria = t.tbl_galerias?.nombre || '-';
-        const ciudad = t.tbl_galerias?.tbl_ciudades?.nombre || '-';
-        return `${t.nombre} (${galeria}, ${ciudad})`;
-      }).join('\n') || 'Sin tiendas';
-
-      const suscripcionTexto = s.tiendas.map(t => {
-        const tp = t.suscripcion_activa?.tipo_plan;
-        return tp ? (tp === 'REGULAR' ? 'ESTANDAR' : tp) : 'Sin suscripción';
-      }).join('\n') || 'Sin tiendas';
-
-      const estadoSuscripcionTexto = s.tiendas.map(t => {
-        return t.suscripcion_activa?.estado || 'N/A';
-      }).join('\n') || 'Sin tiendas';
-
-      const fechaVencTexto = s.tiendas.map(t => {
-        const fin = t.suscripcion_activa?.fin_en;
-        return fin ? new Date(fin).toLocaleDateString('es-PE') : 'N/A';
-      }).join('\n') || 'Sin tiendas';
-
-      const observacionTexto = s.tiendas.map(t => {
-        return t.observacion || '';
-      }).filter(Boolean).join('\n') || '';
-
-      const row = sheet.addRow({
+      const baseRow = {
         id: s.id,
         nombre: s.nombre,
         correo: s.correo,
@@ -1848,14 +1886,40 @@ const exportSellersExcel = async (req, res) => {
         dni: s.tbl_perfil_vendedor?.dni || '',
         estado: s.tbl_perfil_vendedor?.estado_aprobacion || '',
         tipo_comprobante: s.tbl_perfil_vendedor?.tipo_comprobante || '',
-        tiendas: tiendasTexto,
-        suscripcion: suscripcionTexto,
-        estado_suscripcion: estadoSuscripcionTexto,
-        fecha_venc_suscripcion: fechaVencTexto,
-        observacion: observacionTexto,
         fecha: s.fecha_hora_registro ? new Date(s.fecha_hora_registro).toLocaleString('es-PE') : '',
+      };
+
+      const tiendas = Array.isArray(s.tiendas) ? s.tiendas : [];
+
+      if (tiendas.length === 0) {
+        const row = sheet.addRow({
+          ...baseRow,
+          tiendas: 'Sin tiendas',
+          suscripcion: 'Sin tiendas',
+          estado_suscripcion: 'Sin tiendas',
+          fecha_venc_suscripcion: 'Sin tiendas',
+          observacion: '',
+        });
+        row.alignment = { vertical: 'middle', wrapText: true };
+        return;
+      }
+
+      tiendas.forEach(t => {
+        const galeria = t.tbl_galerias?.nombre || '-';
+        const ciudad = t.tbl_galerias?.tbl_ciudades?.nombre || '-';
+        const tipoPlan = t.suscripcion_activa?.tipo_plan;
+        const fin = t.suscripcion_activa?.fin_en;
+
+        const row = sheet.addRow({
+          ...baseRow,
+          tiendas: `${t.nombre} (${galeria}, ${ciudad})`,
+          suscripcion: tipoPlan ? (tipoPlan === 'REGULAR' ? 'ESTANDAR' : tipoPlan) : 'Sin suscripción',
+          estado_suscripcion: t.suscripcion_activa?.estado || 'N/A',
+          fecha_venc_suscripcion: fin ? new Date(fin).toLocaleDateString('es-PE') : 'N/A',
+          observacion: t.observacion || '',
+        });
+        row.alignment = { vertical: 'middle', wrapText: true };
       });
-      row.alignment = { vertical: 'middle', wrapText: true };
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

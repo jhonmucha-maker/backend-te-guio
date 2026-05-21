@@ -1,6 +1,7 @@
 // Servicio centralizado de notificaciones
 // Emite eventos a SSE y envia push notifications via FCM
 const EventEmitter = require('events');
+const prisma = require('../config/db');
 const { sendToUser: pushToUser, sendToRole: pushToRole } = require('./pushService');
 const {
   FAVORITES_UPDATED,
@@ -135,6 +136,52 @@ class NotificationService extends EventEmitter {
 
   ratingStoreNew(sellerId, storeId) {
     this.emitToUser(sellerId, RATING_STORE_NEW, { id_tienda: storeId });
+  }
+
+  // Notifica via SSE (sin push) a todos los compradores que tengan la tienda en favoritos
+  // o productos de la tienda en su lista de compras abierta. Sirve para que el frontend
+  // refresque al instante cuando admin desactiva/activa una tienda.
+  async notifyBuyersStoreVisibilityChanged(storeId) {
+    try {
+      const id_tienda = parseInt(storeId);
+      if (!id_tienda) return;
+
+      const [favStoreRows, favProdRows, listRows] = await Promise.all([
+        prisma.tbl_favoritos_tiendas.findMany({
+          where: { id_tienda },
+          select: { id_comprador: true },
+        }),
+        prisma.tbl_favoritos_productos.findMany({
+          where: { tbl_productos: { id_tienda } },
+          select: { id_comprador: true },
+        }),
+        prisma.tbl_listas_compras.findMany({
+          where: {
+            estado: 'OPEN',
+            items: {
+              some: {
+                OR: [
+                  { snapshot_id_tienda: id_tienda },
+                  { tbl_productos: { id_tienda } },
+                ],
+              },
+            },
+          },
+          select: { id_comprador: true },
+        }),
+      ]);
+
+      const favoritosBuyers = new Set([
+        ...favStoreRows.map(r => r.id_comprador),
+        ...favProdRows.map(r => r.id_comprador),
+      ]);
+      const listaBuyers = new Set(listRows.map(r => r.id_comprador));
+
+      favoritosBuyers.forEach(uid => this.emitSSEOnly(uid, FAVORITES_UPDATED, { id_tienda }));
+      listaBuyers.forEach(uid => this.emitSSEOnly(uid, SHOPPING_LIST_UPDATED, { id_tienda }));
+    } catch (err) {
+      console.error('[notifyBuyersStoreVisibilityChanged] Error:', err);
+    }
   }
 }
 

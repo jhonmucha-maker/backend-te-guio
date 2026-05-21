@@ -15,7 +15,7 @@ const getShoppingList = async (req, res) => {
                 fotos: { take: 1, orderBy: { posicion: 'asc' } },
                 tbl_tiendas: {
                   select: {
-                    id: true, nombre: true, numero_local: true,
+                    id: true, nombre: true, numero_local: true, activo: true, estado_aprobacion: true, eliminado_en: true,
                     suscripcion_activa: { select: { estado: true, fin_en: true } },
                     tbl_galerias: {
                       select: {
@@ -42,11 +42,18 @@ const getShoppingList = async (req, res) => {
       });
     }
 
-    // Filtrar items: solo mostrar productos de tiendas con suscripción vigente (items manuales siempre visibles)
+    // Filtrar items: solo mostrar productos de tiendas visibles (aprobadas, activas, no eliminadas y con
+    // suscripción vigente). Los items manuales siempre se muestran. Esto sincroniza con el toggle del admin:
+    // si la tienda se desactiva, sus productos desaparecen al instante de la lista del comprador.
     const now = new Date();
     const itemsFiltrados = lista.items.filter(item => {
       if (item.tipo === 'MANUAL') return true;
-      const sub = item.tbl_productos?.tbl_tiendas?.suscripcion_activa;
+      const tienda = item.tbl_productos?.tbl_tiendas;
+      if (!tienda) return false;
+      if (tienda.activo !== true) return false;
+      if (tienda.estado_aprobacion !== 'APROBADO') return false;
+      if (tienda.eliminado_en) return false;
+      const sub = tienda.suscripcion_activa;
       return sub && sub.estado === 'ACTIVE' && new Date(sub.fin_en) >= now;
     });
 

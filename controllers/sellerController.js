@@ -232,9 +232,11 @@ const updateStore = async (req, res) => {
       return store;
     });
 
-    // Si pasó a PENDIENTE, notificar a admins en tiempo real
+    // Si pasó a PENDIENTE, notificar a admins en tiempo real y avisar a compradores
+    // afectados (favoritos / lista) para que su UI refleje al instante la pérdida de visibilidad.
     if (tienda.estado_aprobacion === APPROVAL_STATUS.APROBADO) {
       notificationService.newPendingApproval('store', { nombre_tienda: req.body.nombre || tienda.nombre });
+      notificationService.notifyBuyersStoreVisibilityChanged(tienda.id);
     }
 
     res.json({ data: updated });
@@ -654,6 +656,8 @@ const deleteStore = async (req, res) => {
         data: { eliminado_en: now, activo: false, id_usuario_modificacion: req.user.id, fecha_hora_modificacion: now },
       });
     });
+
+    notificationService.notifyBuyersStoreVisibilityChanged(tienda.id);
 
     res.json({ mensaje: 'Tienda eliminada' });
   } catch (error) {

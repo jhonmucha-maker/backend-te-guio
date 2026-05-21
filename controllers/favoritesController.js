@@ -4,7 +4,25 @@ const notificationService = require('../services/notificationService');
 const getFavoriteProducts = async (req, res) => {
   try {
     const favoritos = await prisma.tbl_favoritos_productos.findMany({
-      where: { id_comprador: req.user.id },
+      where: {
+        id_comprador: req.user.id,
+        // Visibilidad estricta: producto aprobado+activo y tienda aprobada+activa con suscripción vigente.
+        // Si el admin desactiva la tienda, los productos se marcan INACTIVE en cascada y dejan de aparecer aquí.
+        tbl_productos: {
+          estado_aprobacion: 'APROBADO',
+          estado: 'ACTIVE',
+          eliminado_en: null,
+          tbl_tiendas: {
+            estado_aprobacion: 'APROBADO',
+            activo: true,
+            eliminado_en: null,
+            suscripcion_activa: {
+              estado: 'ACTIVE',
+              fin_en: { gte: new Date() },
+            },
+          },
+        },
+      },
       include: {
         tbl_productos: {
           include: {
@@ -40,15 +58,8 @@ const getFavoriteProducts = async (req, res) => {
       };
     };
 
-    // Filtrar: solo productos de tiendas con suscripción vigente
-    const now = new Date();
-    const visibles = favoritos.filter(f => {
-      const sub = f.tbl_productos.tbl_tiendas?.suscripcion_activa;
-      return sub && sub.estado === 'ACTIVE' && new Date(sub.fin_en) >= now;
-    });
-
     res.json({
-      data: visibles.map(f => ({
+      data: favoritos.map(f => ({
         id_producto: f.id_producto,
         agregado_en: f.fecha_hora_registro,
         producto: {
@@ -101,7 +112,20 @@ const removeFavoriteProduct = async (req, res) => {
 const getFavoriteStores = async (req, res) => {
   try {
     const favoritos = await prisma.tbl_favoritos_tiendas.findMany({
-      where: { id_comprador: req.user.id },
+      where: {
+        id_comprador: req.user.id,
+        // Solo tiendas visibles: aprobadas, activas, no eliminadas y con suscripción vigente.
+        // Esto sincroniza con el toggle de admin: al desactivar `activo=false`, deja de aparecer aquí.
+        tbl_tiendas: {
+          estado_aprobacion: 'APROBADO',
+          activo: true,
+          eliminado_en: null,
+          suscripcion_activa: {
+            estado: 'ACTIVE',
+            fin_en: { gte: new Date() },
+          },
+        },
+      },
       include: {
         tbl_tiendas: {
           include: {
