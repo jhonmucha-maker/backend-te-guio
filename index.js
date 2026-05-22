@@ -13,6 +13,7 @@ const buyerRoutes = require('./routes/buyerRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
 const sellerRoutes = require('./routes/sellerRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const { getAppVersion } = require('./controllers/versionController');
 const { setupSSE } = require('./services/sseService');
 const { scheduleDailyJob } = require('./services/cronService');
 const { initFirebase } = require('./config/firebase');
@@ -81,6 +82,11 @@ app.get('/api/ping', (req, res) => {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 });
+
+// Endpoint publico de control de versiones del aplicativo Android.
+// Sin autenticacion: la app lo consulta antes del login.
+// Fail-open: ante cualquier error, devuelve defaults que NO bloquean al usuario.
+app.get('/api/version', getAppVersion);
 
 // Manejo de errores global
 app.use((err, req, res, next) => {

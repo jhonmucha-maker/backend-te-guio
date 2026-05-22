@@ -158,6 +158,51 @@ async function main() {
         descripcion: 'Dias de anticipacion para mostrar suscripciones como "por vencer" en el panel admin',
         id_usuario_registro: 1,
       },
+      // Sistema de actualizacion forzada del aplicativo Android.
+      // android_min_version_code = 1 NO bloquea a la version 1.0 publicada.
+      // El admin sube este valor desde el panel cuando quiera forzar actualizacion.
+      {
+        clave: 'android_min_version_code',
+        valor: '1',
+        descripcion: 'versionCode minimo permitido. APKs con versionCode menor seran bloqueados al abrir la app.',
+        id_usuario_registro: 1,
+      },
+      {
+        clave: 'android_latest_version_code',
+        valor: '1',
+        descripcion: 'Ultimo versionCode disponible en Play Store (informativo, no bloqueante).',
+        id_usuario_registro: 1,
+      },
+      {
+        clave: 'android_latest_version_name',
+        valor: '1.0',
+        descripcion: 'Ultimo versionName disponible en Play Store (ej: 1.1, 1.2, 2.0), mostrado al usuario.',
+        id_usuario_registro: 1,
+      },
+      {
+        clave: 'android_force_update_enabled',
+        valor: 'true',
+        descripcion: 'Activa o desactiva el sistema de actualizacion forzada. Poner "false" en emergencias para desbloquear instantaneamente a todos los usuarios.',
+        id_usuario_registro: 1,
+      },
+      {
+        clave: 'android_play_store_url',
+        valor: 'https://play.google.com/store/apps/details?id=com.teguio.app',
+        descripcion: 'URL de la app en Play Store que abre el boton "Actualizar ahora".',
+        id_usuario_registro: 1,
+      },
+      {
+        clave: 'android_update_title',
+        valor: 'Actualizacion requerida',
+        descripcion: 'Titulo mostrado en el modal de actualizacion forzada.',
+        id_usuario_registro: 1,
+      },
+      {
+        clave: 'android_update_message',
+        valor: 'Hay una nueva version disponible. Para seguir usando Te Guio, por favor actualizala desde Play Store.',
+        descripcion: 'Mensaje mostrado en el modal de actualizacion forzada.',
+        id_usuario_registro: 1,
+      },
     ],
     skipDuplicates: true,
   });

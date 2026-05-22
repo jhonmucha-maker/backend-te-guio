@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS, AUTH_ERROR_CODES, AUTH_MESSAGES } = require('../config/constants');
+const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS, TICKET_CLOSE_REASON, AUTH_ERROR_CODES, AUTH_MESSAGES } = require('../config/constants');
 const notificationService = require('../services/notificationService');
 const { revokeRefreshTokensByUser } = require('../models/authModel');
 const { ACCOUNT_DISABLED, SUBSCRIPTION_REQUEST_UPDATED } = require('../config/eventNames');
@@ -15,6 +15,24 @@ const VALID_TRANSACTION_WHERE = {
     eliminado_en: null,
     tbl_usuarios: { eliminado_en: null },
   },
+};
+
+// Filtros reutilizables para excluir rastros de vendedores eliminados.
+// Single Source of Truth para garantizar que NINGUN endpoint muestre datos
+// asociados a vendedores con eliminado_en != null.
+//
+// Uso esperado:
+//   prisma.<tabla>.findMany({ where: { ...WHERE_ACTIVE_STORE } })
+const WHERE_ACTIVE_STORE = {
+  tbl_tiendas: {
+    eliminado_en: null,
+    tbl_usuarios: { eliminado_en: null },
+  },
+};
+// Versión sin prefijo de relación (cuando el query ya está en tbl_tiendas).
+const WHERE_STORE_NOT_DELETED = {
+  eliminado_en: null,
+  tbl_usuarios: { eliminado_en: null },
 };
 
 // ==================== DASHBOARD ====================
@@ -577,9 +595,16 @@ const approveProduct = async (req, res) => {
 // ==================== SUSCRIPCIONES ====================
 const getSubscriptionRequests = async (req, res) => {
   try {
+    // Excluir solicitudes de vendedores/tiendas eliminados (no deben aparecer en panel admin).
+    // El filtro a nivel de tbl_tiendas excluye tanto tiendas con eliminado_en como
+    // tiendas cuyo vendedor (tbl_usuarios) tiene eliminado_en.
+    const baseWhere = {
+      ...WHERE_ACTIVE_STORE,
+      tbl_usuarios: { eliminado_en: null },
+    };
     const where = req.query.status
-      ? { estado: req.query.status }
-      : { estado: { not: SUBSCRIPTION_REQUEST_STATUS.ELIMINADO } };
+      ? { ...baseWhere, estado: req.query.status }
+      : { ...baseWhere, estado: { not: SUBSCRIPTION_REQUEST_STATUS.ELIMINADO } };
     const solicitudes = await prisma.tbl_solicitudes_suscripcion.findMany({
       where,
       include: {
@@ -1039,27 +1064,40 @@ const softDeleteUser = async (req, res) => {
     const userId = parseInt(req.params.id);
     const now = new Date();
 
-    // Expirar suscripciones activas del usuario (si es vendedor con tiendas)
-    await prisma.tbl_suscripciones_activas.updateMany({
-      where: { tbl_tiendas: { id_vendedor: userId }, estado: 'ACTIVE' },
-      data: { estado: 'EXPIRED' },
-    });
-
-    await prisma.tbl_usuarios.update({
+    // Detectar si es vendedor para aplicar cascada completa (si lo es)
+    const userToDelete = await prisma.tbl_usuarios.findUnique({
       where: { id: userId },
-      data: {
-        correo: `deleted_${now.getTime()}_${userId}@removed`,
-        eliminado_en: now,
-        activo: false,
-        id_usuario_modificacion: req.user.id,
-        fecha_hora_modificacion: now,
-      },
+      select: { tbl_roles: { select: { nombre: true } } },
+    });
+    if (!userToDelete) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    const esVendedor = userToDelete.tbl_roles.nombre === ROLES.VENDEDOR;
+
+    await prisma.$transaction(async (tx) => {
+      // Si es vendedor, aplicar cascada completa para eliminar todos los rastros:
+      // suscripciones, solicitudes, tickets, productos, tiendas.
+      if (esVendedor) {
+        await cascadeDeleteSellerData(tx, userId, req.user.id, now);
+      }
+
+      // Soft delete del usuario y liberar correo para re-registro
+      await tx.tbl_usuarios.update({
+        where: { id: userId },
+        data: {
+          correo: `deleted_${now.getTime()}_${userId}@removed`,
+          eliminado_en: now,
+          activo: false,
+          id_usuario_modificacion: req.user.id,
+          fecha_hora_modificacion: now,
+        },
+      });
     });
 
     await prisma.tbl_log_auditoria.create({
       data: {
         id_actor: req.user.id,
-        accion: 'USUARIO_ELIMINADO',
+        accion: esVendedor ? 'VENDEDOR_ELIMINADO_CASCADE' : 'USUARIO_ELIMINADO',
         tipo_entidad: 'tbl_usuarios',
         id_entidad: userId,
       },
@@ -1068,12 +1106,13 @@ const softDeleteUser = async (req, res) => {
     // Refrescar pantalla de Finanzas (Web/APK) para que admins vean los nuevos totales
     // sin transacciones del usuario eliminado. Reutiliza el evento al que ya estan suscritos.
     notificationService.emitSSEToRole('ADMINISTRADOR', SUBSCRIPTION_REQUEST_UPDATED, {
-      reason: 'user_deleted',
+      reason: esVendedor ? 'seller_cascade_deleted' : 'user_deleted',
       id_usuario: userId,
     });
 
     res.json({ mensaje: 'Usuario eliminado' });
   } catch (error) {
+    console.error('Error en softDeleteUser:', error);
     res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 };
@@ -1580,8 +1619,16 @@ const getReports = async (req, res) => {
     ]);
 
     // === TOP 5 VENDEDORES (por rating de tienda) ===
+    // Excluir tiendas con tienda o vendedor eliminado para que NO aparezcan
+    // en el ranking tras la eliminacion del vendedor.
     const topVendedores = await prisma.tbl_agregados_cal_tiendas.findMany({
-      where: { promedio: { gt: 0 } },
+      where: {
+        promedio: { gt: 0 },
+        tbl_tiendas: {
+          eliminado_en: null,
+          tbl_usuarios: { eliminado_en: null },
+        },
+      },
       orderBy: { promedio: 'desc' },
       take: 5,
       select: {
@@ -1599,7 +1646,12 @@ const getReports = async (req, res) => {
     if (topList.length < 5) {
       const existingIds = topList.map(t => t.id);
       const extraStores = await prisma.tbl_tiendas.findMany({
-        where: { eliminado_en: null, estado_aprobacion: APPROVAL_STATUS.APROBADO, id: { notIn: existingIds } },
+        where: {
+          eliminado_en: null,
+          tbl_usuarios: { eliminado_en: null },
+          estado_aprobacion: APPROVAL_STATUS.APROBADO,
+          id: { notIn: existingIds },
+        },
         take: 5 - topList.length,
         select: { id: true, nombre: true },
         orderBy: { fecha_hora_registro: 'desc' },
@@ -1763,6 +1815,68 @@ const createAdmin = async (req, res) => {
 };
 
 // ==================== CASCADE DELETE SELLER ====================
+// Helper: cascada completa para eliminar todos los rastros de un vendedor.
+// Reusado por cascadeDeleteSeller, softDeleteUser (cuando es vendedor) y
+// bulkDeleteRejectedSellers. Garantiza comportamiento consistente.
+//
+// Acciones (todas dentro de la transaccion del caller):
+//   1. Expirar suscripciones activas (estado ACTIVE -> EXPIRED).
+//   2. Marcar solicitudes de suscripcion como ELIMINADO (no aparecen en panel).
+//   3. Cerrar tickets abiertos contra tiendas del vendedor (ATENDIDO / ADMIN_CLOSED).
+//   4. Soft-delete productos (eliminado_en = now, estado = INACTIVE).
+//   5. Soft-delete tiendas (eliminado_en = now, activo = false).
+//
+// Idempotente: cada updateMany filtra por estado para no reprocesar.
+const cascadeDeleteSellerData = async (tx, sellerId, adminUserId, now) => {
+  // 1. Expirar suscripciones activas
+  await tx.tbl_suscripciones_activas.updateMany({
+    where: { tbl_tiendas: { id_vendedor: sellerId }, estado: SUBSCRIPTION_STATUS.ACTIVE },
+    data: { estado: SUBSCRIPTION_STATUS.EXPIRED },
+  });
+
+  // 2. Marcar solicitudes de suscripcion del vendedor como ELIMINADO
+  //    (no las eliminamos fisicamente para preservar auditoria, pero filtros las ignoran)
+  await tx.tbl_solicitudes_suscripcion.updateMany({
+    where: {
+      id_vendedor: sellerId,
+      estado: { not: SUBSCRIPTION_REQUEST_STATUS.ELIMINADO },
+    },
+    data: {
+      estado: SUBSCRIPTION_REQUEST_STATUS.ELIMINADO,
+      id_usuario_modificacion: adminUserId,
+      fecha_hora_modificacion: now,
+    },
+  });
+
+  // 3. Cerrar tickets abiertos contra tiendas del vendedor.
+  //    Motivo: ADMIN_CLOSED para auditar el cierre por eliminacion del vendedor.
+  await tx.tbl_tickets.updateMany({
+    where: {
+      tbl_tiendas: { id_vendedor: sellerId },
+      estado: { not: TICKET_STATUS.ATENDIDO },
+    },
+    data: {
+      estado: TICKET_STATUS.ATENDIDO,
+      cerrado_por: 'ADMIN',
+      motivo_cierre: TICKET_CLOSE_REASON.ADMIN_CLOSED,
+      id_usuario_modificacion: adminUserId,
+      fecha_hora_modificacion: now,
+    },
+  });
+
+  // 4. Soft-delete productos
+  await tx.tbl_productos.updateMany({
+    where: { tbl_tiendas: { id_vendedor: sellerId }, eliminado_en: null },
+    data: { eliminado_en: now, estado: PRODUCT_STATE.INACTIVE },
+  });
+
+  // 5. Soft-delete tiendas
+  await tx.tbl_tiendas.updateMany({
+    where: { id_vendedor: sellerId, eliminado_en: null },
+    data: { eliminado_en: now, activo: false },
+  });
+};
+
 const cascadeDeleteSeller = async (req, res) => {
   const sellerId = parseInt(req.params.id);
   if (sellerId === req.user.id) {
@@ -1778,23 +1892,8 @@ const cascadeDeleteSeller = async (req, res) => {
     const now = new Date();
 
     await prisma.$transaction(async (tx) => {
-      // Expirar suscripciones activas de las tiendas del vendedor
-      await tx.tbl_suscripciones_activas.updateMany({
-        where: { tbl_tiendas: { id_vendedor: sellerId }, estado: 'ACTIVE' },
-        data: { estado: 'EXPIRED' },
-      });
-
-      // Soft delete productos de las tiendas del vendedor
-      await tx.tbl_productos.updateMany({
-        where: { tbl_tiendas: { id_vendedor: sellerId }, eliminado_en: null },
-        data: { eliminado_en: now, estado: PRODUCT_STATE.INACTIVE },
-      });
-
-      // Soft delete tiendas
-      await tx.tbl_tiendas.updateMany({
-        where: { id_vendedor: sellerId, eliminado_en: null },
-        data: { eliminado_en: now, activo: false },
-      });
+      // Cascada completa: suscripciones, solicitudes, tickets, productos, tiendas.
+      await cascadeDeleteSellerData(tx, sellerId, req.user.id, now);
 
       // Soft delete usuario y liberar correo para re-registro
       await tx.tbl_usuarios.update({
@@ -2134,19 +2233,15 @@ const bulkDeleteRejectedSellers = async (req, res) => {
     const userIds = perfiles.map(p => p.id_usuario);
 
     await prisma.$transaction(async (tx) => {
-      // 1. Soft-delete productos de las tiendas del vendedor
-      await tx.tbl_productos.updateMany({
-        where: { tbl_tiendas: { id_vendedor: { in: userIds } }, eliminado_en: null },
-        data: { eliminado_en: now, estado: PRODUCT_STATE.INACTIVE },
-      });
+      // Aplicar la misma cascada completa que cascadeDeleteSeller a cada vendedor:
+      // suscripciones EXPIRED, solicitudes ELIMINADO, tickets cerrados, productos
+      // y tiendas soft-deleted. Garantiza consistencia entre las 3 vias de
+      // eliminacion (cascadeDeleteSeller, softDeleteUser, bulkDeleteRejectedSellers).
+      for (const userId of userIds) {
+        await cascadeDeleteSellerData(tx, userId, req.user.id, now);
+      }
 
-      // 2. Soft-delete tiendas
-      await tx.tbl_tiendas.updateMany({
-        where: { id_vendedor: { in: userIds }, eliminado_en: null },
-        data: { eliminado_en: now, activo: false },
-      });
-
-      // 3. Soft-delete usuarios y liberar correos
+      // Soft-delete usuarios y liberar correos
       for (const userId of userIds) {
         await tx.tbl_usuarios.update({
           where: { id: userId },

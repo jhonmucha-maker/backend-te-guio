@@ -21,6 +21,24 @@ const rateProduct = async (req, res) => {
   }
 
   try {
+    // Bloquear calificacion si el producto, la tienda o el vendedor estan eliminados.
+    // Defensa en profundidad: el frontend ya no deberia ofrecer la opcion, pero
+    // garantizamos que un POST directo a la API tampoco genere rastros.
+    const producto = await prisma.tbl_productos.findFirst({
+      where: {
+        id: id_producto,
+        eliminado_en: null,
+        tbl_tiendas: {
+          eliminado_en: null,
+          tbl_usuarios: { eliminado_en: null },
+        },
+      },
+      select: { id: true },
+    });
+    if (!producto) {
+      return res.status(404).json({ error: 'Producto no disponible' });
+    }
+
     // Verificar evidencia: al menos 1 item comprado del producto
     const itemComprado = await prisma.tbl_items_lista_compras.findFirst({
       where: {
@@ -124,6 +142,19 @@ const rateStore = async (req, res) => {
   }
 
   try {
+    // Bloquear calificacion si la tienda o el vendedor estan eliminados.
+    const tiendaValida = await prisma.tbl_tiendas.findFirst({
+      where: {
+        id: id_tienda,
+        eliminado_en: null,
+        tbl_usuarios: { eliminado_en: null },
+      },
+      select: { id: true },
+    });
+    if (!tiendaValida) {
+      return res.status(404).json({ error: 'Tienda no disponible' });
+    }
+
     // Evidencia: al menos 1 item comprado de la tienda
     const itemComprado = await prisma.tbl_items_lista_compras.findFirst({
       where: {
@@ -217,14 +248,32 @@ const rateStore = async (req, res) => {
 
 const getMyRatings = async (req, res) => {
   try {
+    // Excluir calificaciones a productos/tiendas eliminados o cuyo vendedor fue eliminado.
+    // El comprador no debe ver rastros de vendedores eliminados en su pantalla
+    // "Mis Calificaciones".
     const [productRatings, storeRatings] = await Promise.all([
       prisma.tbl_calificaciones_productos.findMany({
-        where: { id_comprador: req.user.id },
+        where: {
+          id_comprador: req.user.id,
+          tbl_productos: {
+            eliminado_en: null,
+            tbl_tiendas: {
+              eliminado_en: null,
+              tbl_usuarios: { eliminado_en: null },
+            },
+          },
+        },
         include: { tbl_productos: { select: { id: true, nombre: true } } },
         orderBy: { calificado_en: 'desc' },
       }),
       prisma.tbl_calificaciones_tiendas.findMany({
-        where: { id_comprador: req.user.id },
+        where: {
+          id_comprador: req.user.id,
+          tbl_tiendas: {
+            eliminado_en: null,
+            tbl_usuarios: { eliminado_en: null },
+          },
+        },
         include: { tbl_tiendas: { select: { id: true, nombre: true } } },
         orderBy: { calificado_en: 'desc' },
       }),

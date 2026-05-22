@@ -609,8 +609,15 @@ const getPurchasedStores = async (req, res) => {
     const storeIds = items.map((i) => i.snapshot_id_tienda);
     if (storeIds.length === 0) return res.json({ data: [] });
 
+    // Excluir tiendas eliminadas o de vendedores eliminados.
+    // Esta lista alimenta el selector "tiendas donde he comprado" para crear
+    // tickets; no debe ofrecer destinos invalidos.
     const stores = await prisma.tbl_tiendas.findMany({
-      where: { id: { in: storeIds } },
+      where: {
+        id: { in: storeIds },
+        eliminado_en: null,
+        tbl_usuarios: { eliminado_en: null },
+      },
       select: { id: true, nombre: true },
       orderBy: { nombre: 'asc' },
     });

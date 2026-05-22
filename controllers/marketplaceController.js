@@ -328,17 +328,26 @@ const getStoreDetail = async (req, res) => {
 
 const getProductRatings = async (req, res) => {
   try {
+    const productoId = parseInt(req.params.id);
+    // Validar visibilidad del producto antes de listar reseñas. Si el producto
+    // o su tienda o el vendedor estan eliminados, devolver 404 (no exponer rastro).
+    const producto = await prisma.tbl_productos.findFirst({
+      where: { id: productoId, ...getVisibilityWhere() },
+      select: { id: true },
+    });
+    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
+
     const page = parseInt(req.query.page || 1);
     const limit = 10;
     const [ratings, total] = await Promise.all([
       prisma.tbl_calificaciones_productos.findMany({
-        where: { id_producto: parseInt(req.params.id) },
+        where: { id_producto: productoId },
         include: { tbl_usuarios: { select: { nombre: true } } },
         orderBy: { calificado_en: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.tbl_calificaciones_productos.count({ where: { id_producto: parseInt(req.params.id) } }),
+      prisma.tbl_calificaciones_productos.count({ where: { id_producto: productoId } }),
     ]);
 
     res.json({
@@ -355,17 +364,32 @@ const getProductRatings = async (req, res) => {
 
 const getStoreRatings = async (req, res) => {
   try {
+    const tiendaId = parseInt(req.params.id);
+    // Validar visibilidad de la tienda antes de listar reseñas. Si la tienda
+    // o el vendedor estan eliminados, devolver 404 (no exponer rastro).
+    const tienda = await prisma.tbl_tiendas.findFirst({
+      where: {
+        id: tiendaId,
+        eliminado_en: null,
+        estado_aprobacion: 'APROBADO',
+        activo: true,
+        tbl_usuarios: { eliminado_en: null },
+      },
+      select: { id: true },
+    });
+    if (!tienda) return res.status(404).json({ error: 'Tienda no encontrada' });
+
     const page = parseInt(req.query.page || 1);
     const limit = 10;
     const [ratings, total] = await Promise.all([
       prisma.tbl_calificaciones_tiendas.findMany({
-        where: { id_tienda: parseInt(req.params.id) },
+        where: { id_tienda: tiendaId },
         include: { tbl_usuarios: { select: { nombre: true } } },
         orderBy: { calificado_en: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.tbl_calificaciones_tiendas.count({ where: { id_tienda: parseInt(req.params.id) } }),
+      prisma.tbl_calificaciones_tiendas.count({ where: { id_tienda: tiendaId } }),
     ]);
 
     res.json({

@@ -110,6 +110,19 @@ const getMyTickets = async (req, res) => {
     // Admin ve todos los tickets; otros solo los que participan
     if (!isAdmin) {
       where.participantes = { some: { id_usuario: req.user.id } };
+    } else {
+      // Admin: excluir tickets cuya tienda o vendedor estan eliminados.
+      // Tickets contra ADMIN (id_tienda = null) siguen visibles, salvo que
+      // el creador (comprador) este eliminado.
+      where.AND = [
+        {
+          OR: [
+            { id_tienda: null },
+            { tbl_tiendas: { eliminado_en: null, tbl_usuarios: { eliminado_en: null } } },
+          ],
+        },
+        { tbl_usuarios: { eliminado_en: null } },
+      ];
     }
     if (status) where.estado = status;
 
