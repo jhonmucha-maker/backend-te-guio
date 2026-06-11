@@ -168,11 +168,6 @@ const sendStoreApprovalEmail = async (correo, storeName, sellerName) => {
   return sendTemplateEmail('APROBACION_TIENDA', correo, { storeName, sellerName, ...logo.vars }, logo.attachments);
 };
 
-const sendSellerApprovalEmail = async (correo, storeName, sellerName) => {
-  const logo = buildLogoAttachment();
-  return sendTemplateEmail('APROBACION_VENDEDOR', correo, { storeName, sellerName, ...logo.vars }, logo.attachments);
-};
-
 module.exports = {
   verifySmtp,
   sendEmail,
@@ -181,5 +176,4 @@ module.exports = {
   sendPasswordResetEmail,
   sendSubscriptionExpiringEmail,
   sendStoreApprovalEmail,
-  sendSellerApprovalEmail,
 };

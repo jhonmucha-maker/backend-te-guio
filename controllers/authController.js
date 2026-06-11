@@ -20,7 +20,6 @@ const {
 const prisma = require('../config/db');
 const { ROLES } = require('../config/constants');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
-const notificationService = require('../services/notificationService');
 
 const generarTokens = (usuario) => {
   const payload = {
@@ -254,7 +253,8 @@ const registerSeller = async (req, res) => {
           ruc: ruc || null,
           dni: dni || null,
           direccion: direccion || null,
-          estado_aprobacion: 'PENDIENTE',
+          // El vendedor se aprueba automaticamente al registrarse (igual que el comprador): no requiere aprobacion del administrador
+          estado_aprobacion: 'APROBADO',
           id_usuario_registro: user.id,
         },
       });
@@ -271,9 +271,6 @@ const registerSeller = async (req, res) => {
     if (!emailEnviado) {
       console.warn(`[AUTH] Usuario vendedor ${correo} creado pero email de verificación NO se envió`);
     }
-
-    // Notificar a admins sobre nueva solicitud de vendedor
-    notificationService.newPendingApproval('seller', { nombre_vendedor: nombre });
 
     res.status(201).json({
       mensaje: 'Registro vendedor exitoso. Verifica tu email.',

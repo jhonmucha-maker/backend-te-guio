@@ -12,7 +12,6 @@ const {
   SUBSCRIPTION_ACTIVE_UPDATED,
   PRODUCT_PRICE_CHANGED,
   TICKET_CREATED,
-  ADMIN_PENDING_SELLER,
   ADMIN_PENDING_STORE,
   ADMIN_PENDING_PRODUCT,
   ADMIN_PENDING_SUBSCRIPTION,
@@ -80,7 +79,6 @@ class NotificationService extends EventEmitter {
 
     // Notificar a admins para que el sidebar refresque los contadores de pendientes
     const adminEventMap = {
-      seller: ADMIN_PENDING_SELLER,
       store: ADMIN_PENDING_STORE,
       product: ADMIN_PENDING_PRODUCT,
     };
@@ -115,7 +113,6 @@ class NotificationService extends EventEmitter {
 
   newPendingApproval(entityType, extraData = {}) {
     const eventMap = {
-      seller: ADMIN_PENDING_SELLER,
       store: ADMIN_PENDING_STORE,
       product: ADMIN_PENDING_PRODUCT,
       subscription: ADMIN_PENDING_SUBSCRIPTION,

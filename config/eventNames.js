@@ -3,7 +3,6 @@
 
 module.exports = {
   // Eventos admin (emitidos via role_event a ADMINISTRADOR)
-  ADMIN_PENDING_SELLER: 'admin.pending.seller',
   ADMIN_PENDING_STORE: 'admin.pending.store',
   ADMIN_PENDING_PRODUCT: 'admin.pending.product',
   ADMIN_PENDING_SUBSCRIPTION: 'admin.pending.subscription',

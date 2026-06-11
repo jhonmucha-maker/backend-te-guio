@@ -44,13 +44,12 @@ const getDashboard = async (req, res) => {
     const activeSubWhere = { estado: SUBSCRIPTION_STATUS.ACTIVE, fin_en: { gte: now } };
 
     const [totalBuyers, totalSellers, totalStores, totalProducts,
-      pendingSellers, pendingStores, pendingProducts, pendingSubscriptions,
+      pendingStores, pendingProducts, pendingSubscriptions,
       activeSubscriptions, openTickets, premiumStores, standardStores, monthlyAgg, totalAgg] = await Promise.all([
       prisma.tbl_usuarios.count({ where: { tbl_roles: { nombre: ROLES.COMPRADOR }, activo: true, eliminado_en: null } }),
       prisma.tbl_usuarios.count({ where: { tbl_roles: { nombre: ROLES.VENDEDOR }, activo: true, eliminado_en: null } }),
       prisma.tbl_tiendas.count({ where: { estado_aprobacion: APPROVAL_STATUS.APROBADO, eliminado_en: null } }),
       prisma.tbl_productos.count({ where: { estado_aprobacion: APPROVAL_STATUS.APROBADO, eliminado_en: null } }),
-      prisma.tbl_perfiles_vendedor.count({ where: { estado_aprobacion: APPROVAL_STATUS.PENDIENTE } }),
       prisma.tbl_tiendas.count({ where: { estado_aprobacion: APPROVAL_STATUS.PENDIENTE, eliminado_en: null } }),
       prisma.tbl_productos.count({ where: { estado_aprobacion: APPROVAL_STATUS.PENDIENTE, eliminado_en: null } }),
       prisma.tbl_solicitudes_suscripcion.count({ where: { estado: SUBSCRIPTION_REQUEST_STATUS.PENDIENTE } }),
@@ -78,7 +77,7 @@ const getDashboard = async (req, res) => {
 
     res.json({
       totalBuyers, totalSellers, totalStores, totalProducts,
-      pendingSellers, pendingStores, pendingProducts, pendingSubscriptions,
+      pendingStores, pendingProducts, pendingSubscriptions,
       activeSubscriptions, openTickets,
       premiumSellers: premiumStores,
       standardSellers: standardStores,
@@ -89,135 +88,6 @@ const getDashboard = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener dashboard:', error);
     res.status(500).json({ error: 'Error al obtener dashboard' });
-  }
-};
-
-// ==================== APROBACIONES VENDEDOR ====================
-const getPendingSellers = async (req, res) => {
-  try {
-    const sellers = await prisma.tbl_perfiles_vendedor.findMany({
-      where: {
-        tbl_usuarios: { eliminado_en: null },
-      },
-      include: {
-        tbl_usuarios: {
-          include: {
-            tiendas: {
-              where: { eliminado_en: null },
-              select: {
-                id: true,
-                nombre: true,
-                tbl_galerias: {
-                  select: {
-                    nombre: true,
-                    tbl_ciudades: { select: { nombre: true } },
-                  },
-                },
-              },
-            },
-          },
-        },
-        documentos: true,
-      },
-      orderBy: { fecha_hora_registro: 'asc' },
-    });
-
-    const result = sellers.map(s => {
-      const usr = s.tbl_usuarios;
-      const tiendasRaw = usr?.tiendas || [];
-      const tiendas = tiendasRaw.map(t => ({
-        id: t.id,
-        nombre: t.nombre,
-        galeria: t.tbl_galerias?.nombre || null,
-        ciudad: t.tbl_galerias?.tbl_ciudades?.nombre || null,
-      }));
-      const nombreTienda = tiendas[0]?.nombre || s.nombre_negocio || s.razon_social || null;
-
-      return {
-        ...s,
-        estado: s.estado_aprobacion,
-        nombre_tienda: nombreTienda,
-        usuario: usr ? {
-          id: usr.id,
-          nombre: usr.nombre,
-          correo: usr.correo,
-          telefono: usr.telefono,
-          tiendas,
-        } : null,
-      };
-    });
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error al obtener solicitudes vendedores:', error);
-    res.status(500).json({ error: 'Error al obtener vendedores pendientes' });
-  }
-};
-
-const approveSeller = async (req, res) => {
-  const { id } = req.params;
-  const accion = req.body.estado || req.body.accion;
-  const motivo = req.body.motivo_rechazo || req.body.motivo;
-
-  try {
-    const perfil = await prisma.tbl_perfiles_vendedor.findUnique({
-      where: { id: parseInt(id) },
-      include: {
-        tbl_usuarios: {
-          select: {
-            correo: true,
-            nombre: true,
-            eliminado_en: true,
-            tiendas: { where: { eliminado_en: null }, select: { nombre: true }, take: 1 },
-          },
-        },
-      },
-    });
-    if (!perfil || perfil.estado_aprobacion !== APPROVAL_STATUS.PENDIENTE) {
-      return res.status(400).json({ error: 'Perfil no encontrado o no pendiente' });
-    }
-    if (perfil.tbl_usuarios?.eliminado_en) {
-      return res.status(400).json({ error: 'El usuario asociado fue eliminado' });
-    }
-
-    await prisma.tbl_perfiles_vendedor.update({
-      where: { id: parseInt(id) },
-      data: {
-        estado_aprobacion: accion,
-        motivo_rechazo: accion === APPROVAL_STATUS.RECHAZADO ? motivo : null,
-        id_usuario_modificacion: req.user.id,
-        fecha_hora_modificacion: new Date(),
-      },
-    });
-
-    // Auditoria
-    await prisma.tbl_log_auditoria.create({
-      data: {
-        id_actor: req.user.id,
-        accion: `VENDEDOR_${accion}`,
-        tipo_entidad: 'tbl_perfiles_vendedor',
-        id_entidad: parseInt(id),
-        datos_despues: { estado_aprobacion: accion, motivo },
-      },
-    });
-
-    // Notificar al vendedor
-    const sellerName = perfil.tbl_usuarios?.nombre || '';
-    notificationService.approvalUpdated(perfil.id_usuario, 'seller', parseInt(id), accion, {
-      nombre_vendedor: sellerName, estado: accion,
-    });
-
-
-    // Enviar email de aprobacion
-    if (accion === APPROVAL_STATUS.APROBADO && perfil.tbl_usuarios?.correo) {
-      const storeName = perfil.tbl_usuarios.tiendas?.[0]?.nombre || perfil.nombre_negocio || perfil.razon_social || '';
-      emailService.sendSellerApprovalEmail(perfil.tbl_usuarios.correo, storeName, sellerName)
-        .catch(err => console.error('[EMAIL] Error enviando email aprobacion vendedor:', err));
-    }
-
-    res.json({ mensaje: `Vendedor ${accion.toLowerCase()}` });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al procesar aprobacion' });
   }
 };
 
@@ -1816,8 +1686,8 @@ const createAdmin = async (req, res) => {
 
 // ==================== CASCADE DELETE SELLER ====================
 // Helper: cascada completa para eliminar todos los rastros de un vendedor.
-// Reusado por cascadeDeleteSeller, softDeleteUser (cuando es vendedor) y
-// bulkDeleteRejectedSellers. Garantiza comportamiento consistente.
+// Reusado por cascadeDeleteSeller y softDeleteUser (cuando es vendedor).
+// Garantiza comportamiento consistente entre ambas vias de eliminacion.
 //
 // Acciones (todas dentro de la transaccion del caller):
 //   1. Expirar suscripciones activas (estado ACTIVE -> EXPIRED).
@@ -1929,7 +1799,7 @@ const exportSellersExcel = async (req, res) => {
       where: { tbl_roles: { nombre: ROLES.VENDEDOR }, eliminado_en: null },
       select: {
         id: true, nombre: true, correo: true, telefono: true, activo: true, fecha_hora_registro: true,
-        tbl_perfil_vendedor: { select: { nombre_negocio: true, ruc: true, dni: true, estado_aprobacion: true, tipo_comprobante: true } },
+        tbl_perfil_vendedor: { select: { nombre_negocio: true, razon_social: true, ruc: true, dni: true, estado_aprobacion: true, tipo_comprobante: true } },
         tiendas: {
           where: { eliminado_en: null },
           select: {
@@ -1937,6 +1807,12 @@ const exportSellersExcel = async (req, res) => {
             observacion: true,
             tbl_galerias: { select: { nombre: true, tbl_ciudades: { select: { nombre: true } }, tbl_zonas: { select: { nombre: true } } } },
             suscripcion_activa: { select: { tipo_plan: true, estado: true, fin_en: true } },
+            transacciones: {
+              where: { estado: SUBSCRIPTION_STATUS.ACTIVE },
+              select: { monto: true },
+              orderBy: { fin_en: 'desc' },
+              take: 1,
+            },
           },
         },
       },
@@ -1960,8 +1836,12 @@ const exportSellersExcel = async (req, res) => {
       { header: 'DNI', key: 'dni', width: 15 },
       { header: 'Estado Aprobación', key: 'estado', width: 18 },
       { header: 'Tipo Comprobante', key: 'tipo_comprobante', width: 18 },
-      { header: 'Tienda', key: 'tiendas', width: 35 },
+      { header: 'Tienda', key: 'tienda', width: 30 },
+      { header: 'Zona', key: 'zona', width: 18 },
+      { header: 'Galería', key: 'galeria', width: 22 },
+      { header: 'Ciudad', key: 'ciudad', width: 18 },
       { header: 'Suscripción', key: 'suscripcion', width: 18 },
+      { header: 'Precio de Suscripción', key: 'precio_suscripcion', width: 20 },
       { header: 'Estado Suscripción', key: 'estado_suscripcion', width: 20 },
       { header: 'Fecha Venc. Suscripción', key: 'fecha_venc_suscripcion', width: 24 },
       { header: 'Observación', key: 'observacion', width: 30 },
@@ -1974,13 +1854,19 @@ const exportSellersExcel = async (req, res) => {
     sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
 
     sellers.forEach(s => {
+      const perfil = s.tbl_perfil_vendedor;
+      // Si el vendedor escogió "Factura" y registró un RUC, la columna Negocio
+      // muestra la razón social; en caso contrario, el nombre del negocio.
+      const usaFactura = perfil?.tipo_comprobante === 'FACTURA' && !!perfil?.ruc;
+      const negocio = (usaFactura ? (perfil?.razon_social || perfil?.nombre_negocio) : perfil?.nombre_negocio) || '';
+
       const baseRow = {
         id: s.id,
         nombre: s.nombre,
         correo: s.correo,
         telefono: s.telefono || '',
         activo: s.activo ? 'Sí' : 'No',
-        negocio: s.tbl_perfil_vendedor?.nombre_negocio || '',
+        negocio,
         ruc: s.tbl_perfil_vendedor?.ruc || '',
         dni: s.tbl_perfil_vendedor?.dni || '',
         estado: s.tbl_perfil_vendedor?.estado_aprobacion || '',
@@ -1993,8 +1879,12 @@ const exportSellersExcel = async (req, res) => {
       if (tiendas.length === 0) {
         const row = sheet.addRow({
           ...baseRow,
-          tiendas: 'Sin tiendas',
+          tienda: 'Sin tiendas',
+          zona: 'Sin tiendas',
+          galeria: 'Sin tiendas',
+          ciudad: 'Sin tiendas',
           suscripcion: 'Sin tiendas',
+          precio_suscripcion: 'Sin tiendas',
           estado_suscripcion: 'Sin tiendas',
           fecha_venc_suscripcion: 'Sin tiendas',
           observacion: '',
@@ -2006,13 +1896,22 @@ const exportSellersExcel = async (req, res) => {
       tiendas.forEach(t => {
         const galeria = t.tbl_galerias?.nombre || '-';
         const ciudad = t.tbl_galerias?.tbl_ciudades?.nombre || '-';
+        const zona = t.tbl_galerias?.tbl_zonas?.nombre || '-';
         const tipoPlan = t.suscripcion_activa?.tipo_plan;
+        const subActiva = t.suscripcion_activa?.estado === SUBSCRIPTION_STATUS.ACTIVE;
         const fin = t.suscripcion_activa?.fin_en;
+        const montoSuscripcion = t.transacciones?.[0]?.monto;
 
         const row = sheet.addRow({
           ...baseRow,
-          tiendas: `${t.nombre} (${galeria}, ${ciudad})`,
+          tienda: t.nombre,
+          zona,
+          galeria,
+          ciudad,
           suscripcion: tipoPlan ? (tipoPlan === 'REGULAR' ? 'ESTANDAR' : tipoPlan) : 'Sin suscripción',
+          precio_suscripcion: (subActiva && montoSuscripcion != null)
+            ? `S/ ${parseFloat(montoSuscripcion).toFixed(2)}`
+            : 'N/A',
           estado_suscripcion: t.suscripcion_activa?.estado || 'N/A',
           fecha_venc_suscripcion: fin ? new Date(fin).toLocaleDateString('es-PE') : 'N/A',
           observacion: t.observacion || '',
@@ -2207,72 +2106,6 @@ const pushNotificationsHandler = {
 };
 
 // ==================== BULK DELETE REJECTED ====================
-const bulkDeleteRejectedSellers = async (req, res) => {
-  const { ids } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return res.status(400).json({ error: 'Se requiere un array de IDs' });
-  }
-
-  try {
-    // Validar que todos los perfiles existen y están RECHAZADOS
-    const perfiles = await prisma.tbl_perfiles_vendedor.findMany({
-      where: { id: { in: ids.map(Number) } },
-      select: { id: true, id_usuario: true, estado_aprobacion: true },
-    });
-
-    const noRechazados = perfiles.filter(p => p.estado_aprobacion !== APPROVAL_STATUS.RECHAZADO);
-    if (noRechazados.length > 0) {
-      return res.status(400).json({ error: `${noRechazados.length} perfil(es) no están en estado RECHAZADO` });
-    }
-
-    if (perfiles.length === 0) {
-      return res.status(404).json({ error: 'No se encontraron perfiles con los IDs proporcionados' });
-    }
-
-    const now = new Date();
-    const userIds = perfiles.map(p => p.id_usuario);
-
-    await prisma.$transaction(async (tx) => {
-      // Aplicar la misma cascada completa que cascadeDeleteSeller a cada vendedor:
-      // suscripciones EXPIRED, solicitudes ELIMINADO, tickets cerrados, productos
-      // y tiendas soft-deleted. Garantiza consistencia entre las 3 vias de
-      // eliminacion (cascadeDeleteSeller, softDeleteUser, bulkDeleteRejectedSellers).
-      for (const userId of userIds) {
-        await cascadeDeleteSellerData(tx, userId, req.user.id, now);
-      }
-
-      // Soft-delete usuarios y liberar correos
-      for (const userId of userIds) {
-        await tx.tbl_usuarios.update({
-          where: { id: userId },
-          data: {
-            correo: `deleted_${now.getTime()}_${userId}@removed`,
-            eliminado_en: now,
-            activo: false,
-            id_usuario_modificacion: req.user.id,
-            fecha_hora_modificacion: now,
-          },
-        });
-      }
-    });
-
-    // Auditoría
-    await prisma.tbl_log_auditoria.create({
-      data: {
-        id_actor: req.user.id,
-        accion: 'VENDEDORES_RECHAZADOS_ELIMINADOS',
-        tipo_entidad: 'tbl_perfiles_vendedor',
-        datos_despues: { ids_eliminados: ids, total: perfiles.length },
-      },
-    });
-
-
-    res.json({ mensaje: `${perfiles.length} vendedor(es) eliminado(s)` });
-  } catch (error) {
-    console.error('Error eliminando vendedores rechazados:', error);
-    res.status(500).json({ error: 'Error al eliminar vendedores' });
-  }
-};
 
 const bulkDeleteRejectedStores = async (req, res) => {
   const { ids } = req.body;
@@ -2436,14 +2269,13 @@ const bulkDeleteRejectedSubscriptions = async (req, res) => {
 
 module.exports = {
   getDashboard,
-  getPendingSellers, approveSeller,
   getPendingStores, approveStore,
   getPendingProducts, approveProduct,
   getSubscriptionRequests, approveSubscription, updateSubscriptionEndDate,
   getFinanceSummary, getTransactions, getReports, getInactiveUsers,
   getBuyers, getSellers, toggleUserActive, softDeleteUser, cascadeDeleteSeller,
   getAdmins, createAdmin, updateAdmin, deleteAdmin, exportSellersExcel,
-  bulkDeleteRejectedSellers, bulkDeleteRejectedStores,
+  bulkDeleteRejectedStores,
   bulkDeleteRejectedProducts, bulkDeleteRejectedSubscriptions,
   citiesCrud, zonesCrud, galleriesCrud, categoriesCrud, faqsCrud, paymentMethodsCrud,
   termsCrud, privacyCrud, emailTemplatesHandler, plansCrud, systemConfigCrud,

@@ -96,7 +96,8 @@ const registerSellerUser = async (data) => {
       data: {
         id_usuario: user.id, nombre_negocio: data.nombre_negocio || null,
         ruc: data.ruc || null, dni: data.dni || null, direccion: data.direccion || null,
-        estado_aprobacion: 'PENDIENTE', id_usuario_registro: user.id,
+        // El vendedor se aprueba automaticamente al registrarse: no requiere aprobacion del administrador
+        estado_aprobacion: 'APROBADO', id_usuario_registro: user.id,
       },
     });
     return user;

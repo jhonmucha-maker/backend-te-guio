@@ -111,17 +111,6 @@ const TEMPLATE_SECTIONS = {
       { key: 'info_note', label: 'Nota informativa', type: 'infoBox', content: 'Siguiente paso: Agrega tus productos desde la secci\u00f3n Mis Productos en la app.', editable: true },
     ],
   },
-  APROBACION_VENDEDOR: {
-    emoji: '\ud83c\udf89',
-    title: '\u00a1Bienvenido a Te Gu\u00edo!',
-    sections: [
-      { key: 'greeting', label: 'Saludo', type: 'greeting', content: '', editable: false, nameVar: 'sellerName' },
-      { key: 'main_text', label: 'Mensaje principal', type: 'paragraph', content: '\u00a1Felicitaciones! Tu solicitud como vendedor ha sido aprobada exitosamente. Ya eres parte de la comunidad de vendedores de Te Gu\u00edo.', editable: true },
-      { key: 'success_box', label: 'Confirmaci\u00f3n', type: 'successBox', content: '\u2713 Cuenta de vendedor activada', editable: false },
-      { key: 'secondary_text', label: 'Mensaje secundario', type: 'paragraph', content: 'Ahora puedes crear tu tienda y comenzar a vender en nuestra plataforma.', editable: true },
-      { key: 'info_note', label: 'Nota informativa', type: 'infoBox', content: 'Siguiente paso: Crea tu primera tienda desde la app y solicita su aprobaci\u00f3n.', editable: true },
-    ],
-  },
 };
 
 // ─── Helper: auto-format plain text for HTML email ────────────
@@ -257,16 +246,6 @@ const APROBACION_TIENDA = [
   infoBox('\ud83d\udce6 <strong style="color:#312c85;">Siguiente paso:</strong> Agrega tus productos desde la secci\u00f3n "Mis Productos" en la app.'),
 ].join('');
 
-// ─── 5. APROBACIÓN DE VENDEDOR ──────────────────────────────
-
-const APROBACION_VENDEDOR = [
-  greeting('sellerName'),
-  para('\u00a1Felicitaciones! Tu solicitud como vendedor ha sido aprobada exitosamente. Ya eres parte de la comunidad de vendedores de <strong>Te Gu\u00edo</strong>.'),
-  successBox('\u2713 Cuenta de vendedor activada'),
-  para('Ahora puedes crear tu tienda y comenzar a vender en nuestra plataforma.'),
-  infoBox('\ud83c\udfea <strong style="color:#312c85;">Siguiente paso:</strong> Crea tu primera tienda desde la app y solicita su aprobaci\u00f3n.'),
-].join('');
-
 // ─── Exports ─────────────────────────────────────────────────
 
 const EMAIL_TEMPLATE_DEFAULTS = [
@@ -324,20 +303,6 @@ const EMAIL_TEMPLATE_DEFAULTS = [
       label_tab: 'Tienda',
       icono_tab: 'store',
       sections: TEMPLATE_SECTIONS.APROBACION_TIENDA.sections,
-    },
-  },
-  {
-    nombre: 'APROBACION_VENDEDOR',
-    asunto_plantilla: '\u00a1Bienvenido {{sellerName}}! Tu cuenta ha sido aprobada - Te Gu\u00edo',
-    cuerpo_plantilla: wrap('\ud83c\udf89', '\u00a1Bienvenido a Te Gu\u00edo!', APROBACION_VENDEDOR),
-    variables_json: {
-      variables: ['sellerName', 'logo_url', 'logo_display'],
-      descripcion: 'Se env\u00eda cuando un administrador aprueba una solicitud de vendedor.',
-      titulo_display: 'Email de Aprobaci\u00f3n de Vendedor',
-      categoria: 'VENDEDOR',
-      label_tab: 'Vendedor',
-      icono_tab: 'person',
-      sections: TEMPLATE_SECTIONS.APROBACION_VENDEDOR.sections,
     },
   },
 ];

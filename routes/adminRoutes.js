@@ -10,14 +10,13 @@ const { registerDevice, unregisterDevice, getMyDevices } = require('../controlle
 
 const {
   getDashboard,
-  getPendingSellers, approveSeller,
   getPendingStores, approveStore,
   getPendingProducts, approveProduct,
   getSubscriptionRequests, approveSubscription, updateSubscriptionEndDate,
   getFinanceSummary, getTransactions, getReports, getInactiveUsers,
   getBuyers, getSellers, toggleUserActive, softDeleteUser, cascadeDeleteSeller,
   getAdmins, createAdmin, updateAdmin, deleteAdmin, exportSellersExcel,
-  bulkDeleteRejectedSellers, bulkDeleteRejectedStores,
+  bulkDeleteRejectedStores,
   bulkDeleteRejectedProducts, bulkDeleteRejectedSubscriptions,
   citiesCrud, zonesCrud, galleriesCrud, categoriesCrud, faqsCrud, paymentMethodsCrud,
   termsCrud, privacyCrud, emailTemplatesHandler, plansCrud, systemConfigCrud,
@@ -52,10 +51,6 @@ router.post('/admins', ...auth, createAdmin);
 router.put('/admins/:id', ...auth, updateAdmin);
 router.delete('/admins/:id', ...auth, deleteAdmin);
 
-// Aprobaciones vendedores
-router.get('/approvals/sellers', ...auth, getPendingSellers);
-router.patch('/approvals/sellers/:id', ...auth, approveSeller);
-
 // Aprobaciones tiendas
 router.get('/approvals/stores', ...auth, getPendingStores);
 router.patch('/approvals/stores/:id', ...auth, approveStore);
@@ -72,7 +67,6 @@ router.patch('/approvals/subscriptions/:id', ...auth, approveSubscription);
 router.patch('/subscriptions/:id/end-date', ...auth, updateSubscriptionEndDate);
 
 // Eliminacion masiva de rechazados
-router.post('/approvals/sellers/bulk-delete', ...auth, bulkDeleteRejectedSellers);
 router.post('/approvals/stores/bulk-delete', ...auth, bulkDeleteRejectedStores);
 router.post('/approvals/products/bulk-delete', ...auth, bulkDeleteRejectedProducts);
 router.post('/approvals/subscriptions/bulk-delete', ...auth, bulkDeleteRejectedSubscriptions);
