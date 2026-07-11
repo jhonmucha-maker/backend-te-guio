@@ -1879,14 +1879,14 @@ const exportSellersExcel = async (req, res) => {
       if (tiendas.length === 0) {
         const row = sheet.addRow({
           ...baseRow,
-          tienda: 'Sin tiendas',
-          zona: 'Sin tiendas',
-          galeria: 'Sin tiendas',
-          ciudad: 'Sin tiendas',
-          suscripcion: 'Sin tiendas',
-          precio_suscripcion: 'Sin tiendas',
-          estado_suscripcion: 'Sin tiendas',
-          fecha_venc_suscripcion: 'Sin tiendas',
+          tienda: '',
+          zona: '',
+          galeria: '',
+          ciudad: '',
+          suscripcion: '',
+          precio_suscripcion: '',
+          estado_suscripcion: '',
+          fecha_venc_suscripcion: '',
           observacion: '',
         });
         row.alignment = { vertical: 'middle', wrapText: true };
@@ -1894,9 +1894,9 @@ const exportSellersExcel = async (req, res) => {
       }
 
       tiendas.forEach(t => {
-        const galeria = t.tbl_galerias?.nombre || '-';
-        const ciudad = t.tbl_galerias?.tbl_ciudades?.nombre || '-';
-        const zona = t.tbl_galerias?.tbl_zonas?.nombre || '-';
+        const galeria = t.tbl_galerias?.nombre || '';
+        const ciudad = t.tbl_galerias?.tbl_ciudades?.nombre || '';
+        const zona = t.tbl_galerias?.tbl_zonas?.nombre || '';
         const tipoPlan = t.suscripcion_activa?.tipo_plan;
         const subActiva = t.suscripcion_activa?.estado === SUBSCRIPTION_STATUS.ACTIVE;
         const fin = t.suscripcion_activa?.fin_en;
@@ -1908,12 +1908,12 @@ const exportSellersExcel = async (req, res) => {
           zona,
           galeria,
           ciudad,
-          suscripcion: tipoPlan ? (tipoPlan === 'REGULAR' ? 'ESTANDAR' : tipoPlan) : 'Sin suscripción',
+          suscripcion: tipoPlan ? (tipoPlan === 'REGULAR' ? 'ESTANDAR' : tipoPlan) : '',
           precio_suscripcion: (subActiva && montoSuscripcion != null)
             ? `S/ ${parseFloat(montoSuscripcion).toFixed(2)}`
-            : 'N/A',
-          estado_suscripcion: t.suscripcion_activa?.estado || 'N/A',
-          fecha_venc_suscripcion: fin ? new Date(fin).toLocaleDateString('es-PE') : 'N/A',
+            : '',
+          estado_suscripcion: t.suscripcion_activa?.estado || '',
+          fecha_venc_suscripcion: fin ? new Date(fin).toLocaleDateString('es-PE') : '',
           observacion: t.observacion || '',
         });
         row.alignment = { vertical: 'middle', wrapText: true };

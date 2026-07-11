@@ -24,6 +24,11 @@ const {
   pushNotificationsHandler,
 } = require('../controllers/adminController');
 
+const {
+  exportBuyers, exportProducts, exportStores,
+  exportGalleries, exportZones, exportCategories,
+} = require('../controllers/exportController');
+
 const auth = [verificarToken, requireRole(ROLES.ADMINISTRADOR)];
 
 // Dashboard y reportes
@@ -42,8 +47,14 @@ router.patch('/users/:id/toggle-active', ...auth, toggleUserActive);
 router.delete('/users/:id', ...auth, softDeleteUser);
 router.delete('/users/sellers/:id/cascade', ...auth, cascadeDeleteSeller);
 
-// Export
+// Export (?format=xlsx|pdf ; default xlsx)
 router.get('/export/sellers', ...auth, exportSellersExcel);
+router.get('/export/buyers', ...auth, exportBuyers);
+router.get('/export/products', ...auth, exportProducts);
+router.get('/export/stores', ...auth, exportStores);
+router.get('/export/galleries', ...auth, exportGalleries);
+router.get('/export/zones', ...auth, exportZones);
+router.get('/export/categories', ...auth, exportCategories);
 
 // Administradores
 router.get('/admins', ...auth, getAdmins);
