@@ -1,4 +1,52 @@
+// Estado de cuenta mostrado al administrador. NO es una columna de la BD:
+// se deriva de `activo` (habilitado / baneado por el admin) y `correo_verificado`
+// (completo su activacion por codigo). Un usuario nace activo=true + verificado=false.
+const ACCOUNT_STATUS = {
+  ACTIVO: 'ACTIVO',
+  INACTIVO: 'INACTIVO',
+  SUSPENDIDO: 'SUSPENDIDO',
+};
+
+const ACCOUNT_STATUS_LABELS = {
+  [ACCOUNT_STATUS.ACTIVO]: 'Activo',
+  [ACCOUNT_STATUS.INACTIVO]: 'Inactivo',
+  [ACCOUNT_STATUS.SUSPENDIDO]: 'Suspendido',
+};
+
+// Clave de cada estado en los contadores que consumen los listados del admin.
+const ACCOUNT_STATUS_COUNT_KEYS = {
+  [ACCOUNT_STATUS.ACTIVO]: 'activos',
+  [ACCOUNT_STATUS.INACTIVO]: 'sin_verificar',
+  [ACCOUNT_STATUS.SUSPENDIDO]: 'suspendidos',
+};
+
+// El baneo del admin gana sobre la falta de verificacion: es la razon mas fuerte.
+const deriveAccountStatus = ({ activo, correo_verificado }) => {
+  if (!activo) return ACCOUNT_STATUS.SUSPENDIDO;
+  if (!correo_verificado) return ACCOUNT_STATUS.INACTIVO;
+  return ACCOUNT_STATUS.ACTIVO;
+};
+
+// Cuenta usuarios ya mapeados (con estado_cuenta) por estado. Arranca en 0 para
+// que las claves existan aunque ningun usuario caiga en ese estado.
+const countByAccountStatus = (users) => {
+  const counts = Object.fromEntries(
+    Object.values(ACCOUNT_STATUS_COUNT_KEYS).map((key) => [key, 0])
+  );
+  users.forEach((u) => {
+    const key = ACCOUNT_STATUS_COUNT_KEYS[u.estado_cuenta];
+    if (key) counts[key] += 1;
+  });
+  return counts;
+};
+
 module.exports = {
+  ACCOUNT_STATUS,
+  ACCOUNT_STATUS_LABELS,
+  ACCOUNT_STATUS_COUNT_KEYS,
+  deriveAccountStatus,
+  countByAccountStatus,
+
   ROLES: {
     COMPRADOR: 'COMPRADOR',
     VENDEDOR: 'VENDEDOR',

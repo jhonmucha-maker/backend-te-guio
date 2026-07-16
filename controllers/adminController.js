@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS, TICKET_CLOSE_REASON, AUTH_ERROR_CODES, AUTH_MESSAGES } = require('../config/constants');
+const { APPROVAL_STATUS, PRODUCT_STATE, ROLES, SUBSCRIPTION_REQUEST_STATUS, SUBSCRIPTION_STATUS, PLAN_TYPE, TICKET_STATUS, TICKET_CLOSE_REASON, AUTH_ERROR_CODES, AUTH_MESSAGES, ACCOUNT_STATUS_LABELS, deriveAccountStatus, countByAccountStatus } = require('../config/constants');
 const notificationService = require('../services/notificationService');
 const { revokeRefreshTokensByUser } = require('../models/authModel');
 const { ACCOUNT_DISABLED, SUBSCRIPTION_REQUEST_UPDATED } = require('../config/eventNames');
@@ -752,12 +752,11 @@ const getBuyers = async (req, res) => {
       select: { id: true, nombre: true, correo: true, telefono: true, activo: true, correo_verificado: true, fecha_hora_registro: true, tbl_ciudades: { select: { nombre: true } } },
       orderBy: { fecha_hora_registro: 'desc' },
     });
-    const activos = buyers.filter(b => b.activo).length;
+    const result = buyers.map(b => ({ ...b, estado_cuenta: deriveAccountStatus(b) }));
     res.json({
-      compradores: buyers,
-      total: buyers.length,
-      activos,
-      inactivos: buyers.length - activos,
+      compradores: result,
+      total: result.length,
+      ...countByAccountStatus(result),
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener compradores' });
@@ -770,7 +769,7 @@ const getSellers = async (req, res) => {
       where: { tbl_roles: { nombre: ROLES.VENDEDOR }, eliminado_en: null },
       select: {
         id: true, nombre: true, correo: true, telefono: true, activo: true,
-        fecha_hora_registro: true,
+        correo_verificado: true, fecha_hora_registro: true,
         tbl_perfil_vendedor: { select: { estado_aprobacion: true, nombre_negocio: true, ruc: true, dni: true, tipo_comprobante: true, razon_social: true } },
         tiendas: {
           where: { eliminado_en: null },
@@ -795,6 +794,7 @@ const getSellers = async (req, res) => {
 
     const result = sellers.map(s => ({
       ...s,
+      estado_cuenta: deriveAccountStatus(s),
       tiendas: s.tiendas.map(t => ({
         id: t.id,
         nombre: t.nombre,
@@ -815,13 +815,11 @@ const getSellers = async (req, res) => {
       } : null,
     }));
 
-    const activos = result.filter(s => s.activo).length;
     const premium = result.filter(s => s.es_premium).length;
     res.json({
       vendedores: result,
       total: result.length,
-      activos,
-      inactivos: result.length - activos,
+      ...countByAccountStatus(result),
       premium,
     });
   } catch (error) {
@@ -837,7 +835,7 @@ const toggleUserActive = async (req, res) => {
   try {
     const user = await prisma.tbl_usuarios.findUnique({
       where: { id: userId },
-      select: { activo: true, tbl_roles: { select: { nombre: true } } },
+      select: { activo: true, correo_verificado: true, tbl_roles: { select: { nombre: true } } },
     });
 
     if (!user) {
@@ -845,7 +843,7 @@ const toggleUserActive = async (req, res) => {
     }
 
     const nuevoEstado = !user.activo;
-    const esVendedor = user.tbl_roles.nombre === 'VENDEDOR';
+    const esVendedor = user.tbl_roles.nombre === ROLES.VENDEDOR;
 
     await prisma.$transaction(async (tx) => {
       // 1. Cambiar estado del usuario
@@ -917,7 +915,15 @@ const toggleUserActive = async (req, res) => {
       );
     }
 
-    res.json({ mensaje: nuevoEstado ? 'Usuario activado' : 'Usuario desactivado' });
+    // Se devuelve el estado ya derivado para que el admin no reimplemente la regla.
+    res.json({
+      mensaje: nuevoEstado ? 'Usuario activado' : 'Usuario desactivado',
+      activo: nuevoEstado,
+      estado_cuenta: deriveAccountStatus({
+        activo: nuevoEstado,
+        correo_verificado: user.correo_verificado,
+      }),
+    });
   } catch (error) {
     console.error('Error toggleUserActive:', error);
     res.status(500).json({ error: 'Error al cambiar estado del usuario' });
@@ -1790,147 +1796,6 @@ const cascadeDeleteSeller = async (req, res) => {
   }
 };
 
-// ==================== EXPORT SELLERS EXCEL ====================
-const exportSellersExcel = async (req, res) => {
-  try {
-    const ExcelJS = require('exceljs');
-
-    const sellers = await prisma.tbl_usuarios.findMany({
-      where: { tbl_roles: { nombre: ROLES.VENDEDOR }, eliminado_en: null },
-      select: {
-        id: true, nombre: true, correo: true, telefono: true, activo: true, fecha_hora_registro: true,
-        tbl_perfil_vendedor: { select: { nombre_negocio: true, razon_social: true, ruc: true, dni: true, estado_aprobacion: true, tipo_comprobante: true } },
-        tiendas: {
-          where: { eliminado_en: null },
-          select: {
-            nombre: true,
-            observacion: true,
-            tbl_galerias: { select: { nombre: true, tbl_ciudades: { select: { nombre: true } }, tbl_zonas: { select: { nombre: true } } } },
-            suscripcion_activa: { select: { tipo_plan: true, estado: true, fin_en: true } },
-            transacciones: {
-              where: { estado: SUBSCRIPTION_STATUS.ACTIVE },
-              select: { monto: true },
-              orderBy: { fin_en: 'desc' },
-              take: 1,
-            },
-          },
-        },
-      },
-      orderBy: { fecha_hora_registro: 'desc' },
-    });
-
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Marketplace Admin';
-    workbook.created = new Date();
-
-    const sheet = workbook.addWorksheet('Vendedores');
-
-    sheet.columns = [
-      { header: 'ID', key: 'id', width: 8 },
-      { header: 'Nombre', key: 'nombre', width: 25 },
-      { header: 'Correo', key: 'correo', width: 30 },
-      { header: 'Teléfono', key: 'telefono', width: 15 },
-      { header: 'Activo', key: 'activo', width: 10 },
-      { header: 'Negocio', key: 'negocio', width: 25 },
-      { header: 'RUC', key: 'ruc', width: 15 },
-      { header: 'DNI', key: 'dni', width: 15 },
-      { header: 'Estado Aprobación', key: 'estado', width: 18 },
-      { header: 'Tipo Comprobante', key: 'tipo_comprobante', width: 18 },
-      { header: 'Tienda', key: 'tienda', width: 30 },
-      { header: 'Zona', key: 'zona', width: 18 },
-      { header: 'Galería', key: 'galeria', width: 22 },
-      { header: 'Ciudad', key: 'ciudad', width: 18 },
-      { header: 'Suscripción', key: 'suscripcion', width: 18 },
-      { header: 'Precio de Suscripción', key: 'precio_suscripcion', width: 20 },
-      { header: 'Estado Suscripción', key: 'estado_suscripcion', width: 20 },
-      { header: 'Fecha Venc. Suscripción', key: 'fecha_venc_suscripcion', width: 24 },
-      { header: 'Observación', key: 'observacion', width: 30 },
-      { header: 'Fecha Registro', key: 'fecha', width: 22 },
-    ];
-
-    // Estilo del header
-    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A44A8' } };
-    sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
-
-    sellers.forEach(s => {
-      const perfil = s.tbl_perfil_vendedor;
-      // Si el vendedor escogió "Factura" y registró un RUC, la columna Negocio
-      // muestra la razón social; en caso contrario, el nombre del negocio.
-      const usaFactura = perfil?.tipo_comprobante === 'FACTURA' && !!perfil?.ruc;
-      const negocio = (usaFactura ? (perfil?.razon_social || perfil?.nombre_negocio) : perfil?.nombre_negocio) || '';
-
-      const baseRow = {
-        id: s.id,
-        nombre: s.nombre,
-        correo: s.correo,
-        telefono: s.telefono || '',
-        activo: s.activo ? 'Sí' : 'No',
-        negocio,
-        ruc: s.tbl_perfil_vendedor?.ruc || '',
-        dni: s.tbl_perfil_vendedor?.dni || '',
-        estado: s.tbl_perfil_vendedor?.estado_aprobacion || '',
-        tipo_comprobante: s.tbl_perfil_vendedor?.tipo_comprobante || '',
-        fecha: s.fecha_hora_registro ? new Date(s.fecha_hora_registro).toLocaleString('es-PE') : '',
-      };
-
-      const tiendas = Array.isArray(s.tiendas) ? s.tiendas : [];
-
-      if (tiendas.length === 0) {
-        const row = sheet.addRow({
-          ...baseRow,
-          tienda: '',
-          zona: '',
-          galeria: '',
-          ciudad: '',
-          suscripcion: '',
-          precio_suscripcion: '',
-          estado_suscripcion: '',
-          fecha_venc_suscripcion: '',
-          observacion: '',
-        });
-        row.alignment = { vertical: 'middle', wrapText: true };
-        return;
-      }
-
-      tiendas.forEach(t => {
-        const galeria = t.tbl_galerias?.nombre || '';
-        const ciudad = t.tbl_galerias?.tbl_ciudades?.nombre || '';
-        const zona = t.tbl_galerias?.tbl_zonas?.nombre || '';
-        const tipoPlan = t.suscripcion_activa?.tipo_plan;
-        const subActiva = t.suscripcion_activa?.estado === SUBSCRIPTION_STATUS.ACTIVE;
-        const fin = t.suscripcion_activa?.fin_en;
-        const montoSuscripcion = t.transacciones?.[0]?.monto;
-
-        const row = sheet.addRow({
-          ...baseRow,
-          tienda: t.nombre,
-          zona,
-          galeria,
-          ciudad,
-          suscripcion: tipoPlan ? (tipoPlan === 'REGULAR' ? 'ESTANDAR' : tipoPlan) : '',
-          precio_suscripcion: (subActiva && montoSuscripcion != null)
-            ? `S/ ${parseFloat(montoSuscripcion).toFixed(2)}`
-            : '',
-          estado_suscripcion: t.suscripcion_activa?.estado || '',
-          fecha_venc_suscripcion: fin ? new Date(fin).toLocaleDateString('es-PE') : '',
-          observacion: t.observacion || '',
-        });
-        row.alignment = { vertical: 'middle', wrapText: true };
-      });
-    });
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=vendedores.xlsx');
-
-    await workbook.xlsx.write(res);
-    res.end();
-  } catch (error) {
-    console.error('Error exportando vendedores:', error);
-    res.status(500).json({ error: 'Error al exportar vendedores' });
-  }
-};
-
 // ==================== USUARIOS INACTIVOS ====================
 const getInactiveUsers = async (req, res) => {
   try {
@@ -2274,7 +2139,7 @@ module.exports = {
   getSubscriptionRequests, approveSubscription, updateSubscriptionEndDate,
   getFinanceSummary, getTransactions, getReports, getInactiveUsers,
   getBuyers, getSellers, toggleUserActive, softDeleteUser, cascadeDeleteSeller,
-  getAdmins, createAdmin, updateAdmin, deleteAdmin, exportSellersExcel,
+  getAdmins, createAdmin, updateAdmin, deleteAdmin,
   bulkDeleteRejectedStores,
   bulkDeleteRejectedProducts, bulkDeleteRejectedSubscriptions,
   citiesCrud, zonesCrud, galleriesCrud, categoriesCrud, faqsCrud, paymentMethodsCrud,

@@ -15,7 +15,7 @@ const {
   getSubscriptionRequests, approveSubscription, updateSubscriptionEndDate,
   getFinanceSummary, getTransactions, getReports, getInactiveUsers,
   getBuyers, getSellers, toggleUserActive, softDeleteUser, cascadeDeleteSeller,
-  getAdmins, createAdmin, updateAdmin, deleteAdmin, exportSellersExcel,
+  getAdmins, createAdmin, updateAdmin, deleteAdmin,
   bulkDeleteRejectedStores,
   bulkDeleteRejectedProducts, bulkDeleteRejectedSubscriptions,
   citiesCrud, zonesCrud, galleriesCrud, categoriesCrud, faqsCrud, paymentMethodsCrud,
@@ -25,8 +25,7 @@ const {
 } = require('../controllers/adminController');
 
 const {
-  exportBuyers, exportProducts, exportStores,
-  exportGalleries, exportZones, exportCategories,
+  exportEntity, exportBundle, getExportCatalog,
 } = require('../controllers/exportController');
 
 const auth = [verificarToken, requireRole(ROLES.ADMINISTRADOR)];
@@ -48,13 +47,12 @@ router.delete('/users/:id', ...auth, softDeleteUser);
 router.delete('/users/sellers/:id/cascade', ...auth, cascadeDeleteSeller);
 
 // Export (?format=xlsx|pdf ; default xlsx)
-router.get('/export/sellers', ...auth, exportSellersExcel);
-router.get('/export/buyers', ...auth, exportBuyers);
-router.get('/export/products', ...auth, exportProducts);
-router.get('/export/stores', ...auth, exportStores);
-router.get('/export/galleries', ...auth, exportGalleries);
-router.get('/export/zones', ...auth, exportZones);
-router.get('/export/categories', ...auth, exportCategories);
+// 'catalog' y 'bundle' van ANTES de '/export/:entity' o el parametro los captura.
+router.get('/export/catalog', ...auth, getExportCatalog);
+router.get('/export/bundle', ...auth, exportBundle);
+// :entity = clave de utils/datasets (sellers, buyers, products, stores,
+// galleries, zones, categories). Sustituye a las 7 rutas fijas anteriores.
+router.get('/export/:entity', ...auth, exportEntity);
 
 // Administradores
 router.get('/admins', ...auth, getAdmins);
