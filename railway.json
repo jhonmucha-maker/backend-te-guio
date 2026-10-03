@@ -5,7 +5,7 @@
     "buildCommand": "npm install && npx prisma generate"
   },
   "deploy": {
-    "startCommand": "node index.js",
+    "startCommand": "npx prisma migrate deploy && node index.js",
     "healthcheckPath": "/api/ping",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
