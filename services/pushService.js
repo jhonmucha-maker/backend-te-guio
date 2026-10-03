@@ -129,6 +129,19 @@ const sendToUser = async (userId, eventType, extraData = {}) => {
           android: {
             priority: 'high',
           },
+          // iOS: APNs necesita bloque alert explicito (el mensaje data-only
+          // de Android seria una notificacion silenciosa en iPhone)
+          apns: {
+            payload: {
+              aps: {
+                alert: { title, body },
+                sound: 'default',
+                badge: 1,
+                'mutable-content': 1,
+              },
+            },
+            ...(imageUrl ? { fcm_options: { image: imageUrl } } : {}),
+          },
           webpush: {
             notification: {
               title,
