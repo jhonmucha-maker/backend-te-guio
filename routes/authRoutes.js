@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const verificarToken = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { ROLES } = require('../config/constants');
 const { validateRegisterBuyer, validateRegisterSeller, validateLogin, validateVerifyEmail, validateResetPassword } = require('../validators/authValidator');
 const {
   login, registerBuyer, registerSeller, verifyEmail, resendEmailCode,
-  forgotPassword, resetPassword, refreshTokenHandler, logout, getMe, getCurrentTerms, acceptTerms,
+  forgotPassword, resetPassword, refreshTokenHandler, logout, deleteOwnAccount, getMe, getCurrentTerms, acceptTerms,
 } = require('../controllers/authController');
 
 router.post('/register/buyer', validateRegisterBuyer, registerBuyer);
@@ -13,6 +15,7 @@ router.post('/verify-email', validateVerifyEmail, verifyEmail);
 router.post('/resend-email-code', resendEmailCode);
 router.post('/login', validateLogin, login);
 router.post('/logout', verificarToken, logout);
+router.post('/account/delete', verificarToken, requireRole(ROLES.COMPRADOR, ROLES.VENDEDOR), deleteOwnAccount);
 router.post('/password/forgot', forgotPassword);
 router.post('/password/reset', validateResetPassword, resetPassword);
 router.post('/refresh', refreshTokenHandler);

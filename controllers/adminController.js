@@ -2139,6 +2139,7 @@ module.exports = {
   getSubscriptionRequests, approveSubscription, updateSubscriptionEndDate,
   getFinanceSummary, getTransactions, getReports, getInactiveUsers,
   getBuyers, getSellers, toggleUserActive, softDeleteUser, cascadeDeleteSeller,
+  cascadeDeleteSellerData,
   getAdmins, createAdmin, updateAdmin, deleteAdmin,
   bulkDeleteRejectedStores,
   bulkDeleteRejectedProducts, bulkDeleteRejectedSubscriptions,

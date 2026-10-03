@@ -19,7 +19,10 @@ const {
 } = require('../models/authModel');
 const prisma = require('../config/db');
 const { ROLES } = require('../config/constants');
+const { SUBSCRIPTION_REQUEST_UPDATED } = require('../config/eventNames');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
+const notificationService = require('../services/notificationService');
+const { cascadeDeleteSellerData } = require('./adminController');
 
 const generarTokens = (usuario) => {
   const payload = {
@@ -504,6 +507,80 @@ const logout = async (req, res) => {
   }
 };
 
+// Eliminacion de cuenta iniciada por el propio comprador/vendedor (requisito App Store 5.1.1(v)).
+// Aplica la misma eliminacion que el admin (softDeleteUser): cascada completa si es vendedor
+// y correo liberado para re-registro. Ademas cierra sus sesiones y dispositivos push, como logout,
+// porque despues de eliminarse el usuario ya no puede llamar a /logout (authMiddleware lo bloquea).
+const deleteOwnAccount = async (req, res) => {
+  const { contrasena } = req.body || {};
+  if (!contrasena) {
+    return res.status(400).json({ error: 'Ingresa tu contraseña para confirmar' });
+  }
+
+  try {
+    const userId = req.user.id;
+    const usuario = await prisma.tbl_usuarios.findUnique({
+      where: { id: userId },
+      select: { contrasena: true, tbl_roles: { select: { nombre: true } } },
+    });
+    if (!usuario) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const coincide = await bcrypt.compare(contrasena, usuario.contrasena);
+    if (!coincide) {
+      return res.status(400).json({ error: 'La contraseña es incorrecta' });
+    }
+
+    const esVendedor = usuario.tbl_roles.nombre === ROLES.VENDEDOR;
+    const now = new Date();
+
+    await prisma.$transaction(async (tx) => {
+      if (esVendedor) {
+        await cascadeDeleteSellerData(tx, userId, userId, now);
+      }
+
+      await tx.tbl_usuarios.update({
+        where: { id: userId },
+        data: {
+          correo: `deleted_${now.getTime()}_${userId}@removed`,
+          eliminado_en: now,
+          activo: false,
+          id_usuario_modificacion: userId,
+          fecha_hora_modificacion: now,
+        },
+      });
+
+      await tx.tbl_dispositivos_push.updateMany({
+        where: { id_usuario: userId, activo: true },
+        data: { activo: false },
+      });
+    });
+
+    await revokeRefreshTokensByUser(userId);
+
+    await prisma.tbl_log_auditoria.create({
+      data: {
+        id_actor: userId,
+        accion: esVendedor ? 'VENDEDOR_ELIMINADO_CASCADE' : 'USUARIO_ELIMINADO',
+        tipo_entidad: 'tbl_usuarios',
+        id_entidad: userId,
+      },
+    });
+
+    // Mismo evento que usa el admin al eliminar: refresca Finanzas/listados en paneles abiertos.
+    notificationService.emitSSEToRole('ADMINISTRADOR', SUBSCRIPTION_REQUEST_UPDATED, {
+      reason: esVendedor ? 'seller_cascade_deleted' : 'user_deleted',
+      id_usuario: userId,
+    });
+
+    res.json({ mensaje: 'Cuenta eliminada' });
+  } catch (error) {
+    console.error('Error en deleteOwnAccount:', error);
+    res.status(500).json({ error: 'Error al eliminar la cuenta' });
+  }
+};
+
 const getMe = async (req, res) => {
   try {
     const usuario = await findUserById(req.user.id);
@@ -578,6 +655,7 @@ module.exports = {
   resetPassword,
   refreshTokenHandler,
   logout,
+  deleteOwnAccount,
   getMe,
   getCurrentTerms,
   acceptTerms,
