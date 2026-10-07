@@ -1095,7 +1095,7 @@ const zonesCrud = {
         include: {
           tbl_ciudades: { select: { id: true, nombre: true } },
         },
-        orderBy: { id: 'desc' },
+        orderBy: { nombre: 'asc' },
       });
       res.json(data);
     } catch (error) {

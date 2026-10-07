@@ -31,8 +31,9 @@ const money = (n) => (n === null || n === undefined ? '' : `S/ ${parseFloat(n).t
 const coord = (n) => (n === null || n === undefined ? '' : String(n));
 
 // Mapea el codigo interno del plan al texto mostrado al usuario.
+// Sin suscripcion -> celda vacia.
 const planLabel = (tipo) => {
-  if (!tipo) return 'Sin suscripción';
+  if (!tipo) return '';
   return tipo === 'REGULAR' ? 'ESTANDAR' : tipo;
 };
 
@@ -192,7 +193,7 @@ const fetchSellers = async () => {
         id_galeria: t.tbl_galerias?.id ?? '',
         ciudad: t.tbl_galerias?.tbl_ciudades?.nombre || '',
         id_ciudad: t.tbl_galerias?.tbl_ciudades?.id ?? '',
-        suscripcion: sub?.tipo_plan ? planLabel(sub.tipo_plan) : '',
+        suscripcion: planLabel(sub?.tipo_plan),
         precio_suscripcion: subActiva && monto != null ? money(monto) : '',
         estado_suscripcion: sub?.estado || '',
         fecha_venc_suscripcion: fmtDay(sub?.fin_en),

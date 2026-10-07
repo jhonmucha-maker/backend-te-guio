@@ -63,13 +63,13 @@ const searchProducts = async (req, res) => {
     let orderBy = [];
     switch (sort) {
       case 'cheap':
-        orderBy = [{ precio: 'asc' }];
+        orderBy = [{ precio: 'asc' }, { id: 'asc' }];
         break;
       case 'expensive':
-        orderBy = [{ precio: 'desc' }];
+        orderBy = [{ precio: 'desc' }, { id: 'asc' }];
         break;
       case 'recent':
-        orderBy = [{ fecha_hora_registro: 'desc' }];
+        orderBy = [{ fecha_hora_registro: 'desc' }, { id: 'asc' }];
         break;
       default: // relevancia - se aplica post-query
         orderBy = [{ nombre: 'asc' }];
@@ -138,7 +138,9 @@ const searchProducts = async (req, res) => {
         const storeRatingA = parseFloat(a.tienda.rating?.promedio || 0);
         const storeRatingB = parseFloat(b.tienda.rating?.promedio || 0);
         if (storeRatingB !== storeRatingA) return storeRatingB - storeRatingA;
-        return a.nombre.localeCompare(b.nombre);
+        // id como desempate final: el orden debe ser total para que las paginas
+        // no se solapen ni salten productos (scroll infinito del comprador).
+        return a.nombre.localeCompare(b.nombre) || a.id - b.id;
       });
       result = result.slice(skip, skip + limit);
     }
